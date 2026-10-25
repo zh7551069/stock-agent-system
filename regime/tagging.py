@@ -55,6 +55,28 @@ def breadth_bucket(frac: float) -> str:
     return ">70%"
 
 
+#: 恐慌超跌阈值：close 低于 MA20 达此比例记为恐慌（均线近似，占位待考证）。
+PANIC_RATIO = 0.93
+
+
+def cycle_stage(close: float, ma20: float, ma60: float) -> str:
+    """市场周期六阶段（均线近似，仅用 close/MA20/MA60 三关系）。
+
+    - 上升趋势：close > ma20 > ma60
+    - 下降趋势：close < ma20 < ma60（恐慌超跌：偏离 MA20 超 :data:`PANIC_RATIO`）
+    - 筑底反弹：close > ma20 但仍 < ma60（长期线下刚转强）
+    - 顶部转弱：close < ma20 但仍 > ma60（长期线上刚转弱）
+    """
+    above20, above60 = close > ma20, close > ma60
+    if above20 and above60:
+        return "上升趋势"
+    if not above20 and not above60:
+        return "恐慌超跌" if close < PANIC_RATIO * ma20 else "下降趋势"
+    if above20 and not above60:
+        return "筑底反弹"
+    return "顶部转弱"
+
+
 def tag_day(
     *,
     limit_up_count: int,

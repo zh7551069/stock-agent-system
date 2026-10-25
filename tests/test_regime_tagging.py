@@ -1,6 +1,6 @@
 """regime · 市场级维度打标（确定性分桶）单测。"""
 
-from regime.tagging import beta_bucket, breadth_bucket, limit_up_bucket, quantile_three, tag_day
+from regime.tagging import beta_bucket, breadth_bucket, cycle_stage, limit_up_bucket, quantile_three, tag_day
 
 
 def test_limit_up_bucket():
@@ -34,6 +34,14 @@ def test_breadth_bucket():
     assert breadth_bucket(0.3) == "30-70%"
     assert breadth_bucket(0.7) == "30-70%"
     assert breadth_bucket(0.71) == ">70%"
+
+
+def test_cycle_stage():
+    assert cycle_stage(110, 105, 100) == "上升趋势"       # close>ma20>ma60
+    assert cycle_stage(90, 95, 100) == "下降趋势"          # close<ma20<ma60
+    assert cycle_stage(80, 95, 100) == "恐慌超跌"          # 偏离 ma20 超 0.93
+    assert cycle_stage(102, 100, 105) == "筑底反弹"        # close>ma20 但 <ma60
+    assert cycle_stage(98, 100, 95) == "顶部转弱"          # close<ma20 但 >ma60
 
 
 def test_tag_day_produces_regime_label_columns():
