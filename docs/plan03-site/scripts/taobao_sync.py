@@ -564,35 +564,55 @@ def _adapt_date_types(con, tbl, rows, cols):
 
 
 def _delete_for_rows(con, tbl, rows, cols):
-    """无主键表去重删除：按 csv 结构判断（按代码删 or 按日期删），避免误清全表。
+    """无主键表去重删除：按 csv 结构判断，避免误清全表。
 
-    按股票拆分的 csv（单股票多日期）→ DELETE WHERE code IN (...)；
-    按日期拆分的 csv（多股票单日期）→ DELETE WHERE date IN (...)。
+    单代码（按股票拆分）→ DELETE WHERE code = ...；
+    有日期列（按天拆分，含 TIMESTAMP 分钟线）→ DELETE WHERE date/CAST(dt AS DATE) IN (...)。
     """
+    try:
+        col_types = {r[0]: r[1] for r in con.execute('DESCRIBE "%s"' % tbl).fetchall()}
+    except Exception:
+        col_types = {}
     code_cols = [c for c in cols if c in ("code", "股票代码", "代码", "成分股票代码", "板块代码", "题材代码")]
     date_cols = [c for c in cols if any(k in c for k in ("日期", "时间", "date", "dt"))]
-    codes = set()
-    for c in code_cols:
-        for r in rows:
-            if r.get(c) is not None:
-                codes.add(r.get(c))
+    codes = {r.get(c) for c in code_cols for r in rows if r.get(c) is not None}
     dates = set()
     for c in date_cols:
         for r in rows:
-            if r.get(c) is not None:
-                dates.add(r.get(c))
+            v = r.get(c)
+            if v is None:
+                continue
+            dates.add(v.date() if isinstance(v, datetime.datetime) else v)
     cc = code_cols[0] if code_cols else None
     dc = date_cols[0] if date_cols else None
-    if cc and len(codes) == 1:
-        con.execute(f'DELETE FROM "{tbl}" WHERE "{cc}" = ?', list(codes))
-    elif dc and len(dates) == 1 and len(codes) > 1:
-        con.execute(f'DELETE FROM "{tbl}" WHERE "{dc}" = ?', list(dates))
-    elif cc and len(codes) < max(1, len(dates)):
-        con.execute(f'DELETE FROM "{tbl}" WHERE "{cc}" IN ({",".join("?" * len(codes))})', list(codes))
-    elif dc:
-        con.execute(f'DELETE FROM "{tbl}" WHERE "{dc}" IN ({",".join("?" * len(dates))})', list(dates))
+    dc_type = col_types.get(dc) if dc else None
+
+    def _del_dates():
+        ph = ",".join("?" * len(dates))
+        if dc_type == "TIMESTAMP":
+            con.execute('DELETE FROM "%s" WHERE CAST("%s" AS DATE) IN (%s)' % (tbl, dc, ph), list(dates))
+        else:
+            con.execute('DELETE FROM "%s" WHERE "%s" IN (%s)' % (tbl, dc, ph), list(dates))
+
+    def _del_code_dates():
+        ph = ",".join("?" * len(dates))
+        single = list(codes)[0]
+        if dc_type == "TIMESTAMP":
+            con.execute('DELETE FROM "%s" WHERE "%s" = ? AND CAST("%s" AS DATE) IN (%s)' % (tbl, cc, dc, ph), [single] + list(dates))
+        else:
+            con.execute('DELETE FROM "%s" WHERE "%s" = ? AND "%s" IN (%s)' % (tbl, cc, dc, ph), [single] + list(dates))
+
+    if cc and len(codes) == 1 and dc and dates:
+        # 单代码 + 有日期（分钟线每 csv 一只票当天）→ 按 (code, 日期) 删，避免删该 code 历史
+        _del_code_dates()
+    elif dc and dates:
+        _del_dates()
+    elif cc and len(codes) == 1:
+        con.execute('DELETE FROM "%s" WHERE "%s" = ?' % (tbl, cc), list(codes))
+    elif cc and codes:
+        con.execute('DELETE FROM "%s" WHERE "%s" IN (%s)' % (tbl, cc, ",".join("?" * len(codes))), list(codes))
     else:
-        con.execute(f'DELETE FROM "{tbl}"')
+        con.execute('DELETE FROM "%s"' % tbl)
 
 
 def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, csv_only=False,
