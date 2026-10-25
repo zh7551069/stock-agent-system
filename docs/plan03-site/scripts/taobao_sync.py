@@ -25,6 +25,8 @@ def normalize_code(c):
     if m: return m.group(2).lower() + m.group(1)      # 000001.SZ → sz000001
     m = re.match(r'^(sh|sz|bj)(\d{6})$', s, re.I)
     if m: return m.group(1).lower() + m.group(2)      # SH600519 → sh600519
+    if re.match(r'^88\d{4}$', s):                      # 通达信板块指数 880xxx，保留原样
+        return s
     return None
 
 def normalize_date(d):
@@ -43,6 +45,15 @@ def normalize_num(v, unit):
     if v is None or v == '' or v == '--' or v == 'None': return None
     try: return float(v) * _UNIT.get(unit, 1.0)
     except (ValueError, TypeError): return None
+
+def normalize_datetime(d):
+    """分钟线时间 '2026/10/21 10:30' → datetime。"""
+    if isinstance(d, datetime.datetime): return d
+    s = str(d).strip()
+    for f in ('%Y/%m/%d %H:%M', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
+        try: return datetime.datetime.strptime(s, f)
+        except ValueError: pass
+    return None
 
 # ── SOURCE_MAP：表头签名 → (目标表, {源列:(目标列,单位)}) ──
 # 签名 = 表头里能唯一区分该类型的关键列集合；匹配 = 签名 ⊆ 表头
@@ -133,6 +144,33 @@ SOURCE_MAP = [
     # 港股通每日成交统计
     (frozenset({"买入成交金额(亿元)","卖出成交金额(亿元)"}), "hk_connect_daily", {
         "交易日期":"date","买入成交金额(亿元)":("buy_amt","亿元"),"卖出成交金额(亿元)":("sell_amt","亿元")}),
+    # 分钟线（通达信板块指数，code 880xxx；period 由 zip 文件名注入）
+    (frozenset({"时间","代码","名称","开盘价","收盘价","最高价","最低价","成交量","成交额","涨幅","振幅"}),
+     "minute_kline", {
+         "时间":"dt","代码":"code","名称":"name","开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
+         "成交量":("volume","手"),"成交额":("amount","元"),"涨幅":"pct_chg","振幅":"amplitude"}),
+    # 资产负债表（关键字段）
+    (frozenset({"股票代码","公告日期","报告期","报表类型"}), "balance_sheet", {
+        "股票代码":"code","公告日期":"date","报告期":"report_period","报表类型":"report_type",
+        "期末总股本":("total_share","股"),"股东权益合计(含少数股东权益)":("equity","元"),
+        "货币资金":("cash","元"),"应收账款":("receivable","元"),"存货":("inventory","元"),
+        "营业总收入":("revenue","元"),"营业总成本":("cost","元"),"净利润":("net_profit","元")}),
+    # 财务指标（关键字段）
+    (frozenset({"股票代码","公告日期","报告期","基本每股收益"}), "fin_indicator", {
+        "股票代码":"code","公告日期":"date","报告期":"report_period",
+        "基本每股收益":("eps","元"),"稀释每股收益":("eps_diluted","元"),
+        "毛利":("gross_profit","元"),"流动比率":("current_ratio","倍"),"速动比率":("quick_ratio","倍")}),
+    # 财报披露计划
+    (frozenset({"股票代码","报告期","预约披露日期"}), "fin_disclosure", {
+        "股票代码":"code","报告期":"report_period","预约披露日期":"scheduled_date","实际披露日期":"actual_date"}),
+    # 限售股解禁
+    (frozenset({"股票代码","公告日期","解禁日期","流通股份(股)"}), "share_unlock", {
+        "股票代码":"code","公告日期":"date","解禁日期":"unlock_date",
+        "流通股份(股)":("shares","股"),"流通股份占总股本比例(%)":("ratio","%"),"股东名称":"holder","股份类型":"share_type"}),
+    # 题材成分
+    (frozenset({"题材代码","题材名称","成分股票代码","交易日期"}), "theme_component", {
+        "题材代码":"theme_code","题材名称":"theme_name","成分股票名称":"stock_name","成分股票代码":"stock_code",
+        "交易日期":"date","描述":"desc","人气值":"hot"}),
 ]
 
 # ── QC 断言 ──
@@ -158,7 +196,9 @@ def _apply_map(row, colmap):
     for src, tgt in colmap.items():
         if src not in row: continue
         if tgt == "code": out[tgt] = normalize_code(row[src])
+        elif tgt == "code_keep": out[tgt] = str(row[src]).strip() or None   # 板块指数码 880xxx 原样保留
         elif tgt == "date": out[tgt] = normalize_date(row[src])
+        elif tgt == "dt": out[tgt] = normalize_datetime(row[src])
         elif isinstance(tgt, tuple): out[tgt[0]] = normalize_num(row[src], tgt[1])
         else: out[tgt] = row[src]
     return out
@@ -239,12 +279,35 @@ def qc_all_pass(qc):
     return all(v == 0 for v in qc.values())
 
 
+def _ensure_table(con, tbl, colmap):
+    """表不存在时按 colmap 目标列建表（date→DATE，dt→TIMESTAMP，数值→DOUBLE，其余→VARCHAR）。"""
+    exists = con.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name=?", [tbl]).fetchone()[0]
+    if exists:
+        return
+    cols = []
+    for tgt in colmap.values():
+        name = tgt[0] if isinstance(tgt, tuple) else tgt
+        if name == "date": typ = "DATE"
+        elif name == "dt": typ = "TIMESTAMP"
+        elif isinstance(tgt, tuple): typ = "DOUBLE"
+        else: typ = "VARCHAR"
+        cols.append(f'"{name}" {typ}')
+    if tbl == "minute_kline":
+        cols.append('"period" VARCHAR')
+    con.execute(f'CREATE TABLE "{tbl}" ({", ".join(cols)})')
+
+
 def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
     con = duckdb.connect(db_path)
     imported, unknown = {}, []
     removable = []  # 完全识别 + 有导入的文件，验证通过后可删除
     for f, is_zip in _iter_files(download_dir):
         name = os.path.basename(f)
+        period = None
+        if is_zip:
+            m = re.search(r"_(\d+min)\.zip$", name)
+            period = m.group(1) if m else None
         file_fully_recognized = True
         file_imported_any = False
         for stream_name, fp in _open_csv_streams(f, is_zip):
@@ -261,10 +324,14 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
             fp.close()
             if "code" in colmap.values():
                 rows = [r for r in rows if r.get("code") is not None]
+            if tbl == "minute_kline" and period:
+                for r in rows:
+                    r["period"] = period
             imported[tbl] = imported.get(tbl, 0) + len(rows)
             if dry_run:
                 print(f"  [dry-run] {stream_name} → {tbl}: {len(rows)} 行")
             elif rows:
+                _ensure_table(con, tbl, colmap)
                 cols = list(rows[0].keys())
                 con.executemany(
                     f"INSERT OR REPLACE INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
