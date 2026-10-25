@@ -38,8 +38,6 @@ def normalize_date(d):
         except ValueError: pass
     return None
 
-def normalize_market(c): return c[:2] if c else None
-
 _UNIT = {"元":1.0,"千元":1e3,"万元":1e4,"亿元":1e8,"百万元":1e6,"万股":1e4,"手":100,"万笔":1e4}
 def normalize_num(v, unit):
     if v is None or v == '' or v == '--' or v == 'None': return None
@@ -167,19 +165,25 @@ SOURCE_MAP = [
         "小单净流入净额(元)":("小单净流入净额(元)","num","元"),
         "小单净流入占比(%)":("小单净流入占比(%)","num",""),
         "主力净流入最大股":"主力净流入最大股","序号":"序号"}),
-    # 涨停池
-    (frozenset({"涨停原因","榜单类别","封单额(元)"}), "zt_pool", {
-        "交易日期":"date","股票代码":"code","涨停原因":"reason","榜单类别":"category","涨停标签":"tag",
-        "封单额(元)":("seal_amount","元"),"换手率%":"turnover"}),
-    # 自然涨停（涨停时间/开板时间）
+    # 涨停池 → zt_pool_limit_up（判决器读「代码+交易时间」；映射能对齐的字段，其余留空）
+    (frozenset({"涨停原因","榜单类别","封单额(元)"}), "zt_pool_limit_up", {
+        "交易日期":("交易时间","date"),"股票代码":("代码","code"),"股票名称":"名称",
+        "涨跌幅%":"涨跌幅%","涨停原因":"涨停原因","涨停标签":"标签",
+        "封单额(元)":("封单","num","元"),"换手率%":("换手率%","num",""),
+        "实际流通(元)":("实际流通","num","元"),"最大封单(元)":("最大封单","num","元"),
+        "成交额(元)":("成交额","num","元"),"股票类型":"src_type"}),
+    # 自然涨停（真实库中文列，恒等）
     (frozenset({"涨停时间","开板时间","最后涨停时间"}), "zt_pool_natural_up", {
-        "代码":"code","交易时间":"date","涨停原因":"reason","标签":"tag","板块":"board"}),
-    # 连板天梯
-    (frozenset({"连板次数"}), "zt_ladder", {
-        "股票代码":"code","股票名称":"name","交易日期":"date","连板次数":"ladder_count"}),
-    # 涨停最强板块
+        "代码":("代码","code"),"交易时间":("交易时间","date"),
+        "涨停原因":"涨停原因","标签":"标签","板块":"板块"}),
+    # 连板天梯 → ladder（真实库中文列，恒等）
+    (frozenset({"连板次数"}), "ladder", {
+        "股票代码":("股票代码","code"),"股票名称":"股票名称","交易日期":("交易日期","date"),
+        "连板次数":"连板次数"}),
+    # 涨停最强板块（真实库中文列，恒等）
     (frozenset({"上榜天数","连板高度","涨停家数"}), "zt_strong_board", {
-        "板块代码":"board_code","板块名称":"board_name","交易日期":"date","涨停家数":"zt_count","连板高度":"ladder_height"}),
+        "板块代码":"板块代码","板块名称":"板块名称","交易日期":("交易日期","date"),
+        "涨停家数":"涨停家数","连板高度":"连板高度"}),
     # 龙虎榜明细（真实库中文列，恒等映射）
     (frozenset({"龙虎榜净买入额(元)","龙虎榜成交额(元)"}), "lhb_daily", {
         "交易日期":("交易日期","date"),"股票代码":("股票代码","code"),
@@ -203,9 +207,11 @@ SOURCE_MAP = [
         "卖出占总成交比例%":("卖出占总成交比例%","num",""),
         "净成交额(元)":("净成交额(元)","num","元"),
         "买卖类型":"买卖类型","上榜理由":"上榜理由"}),
-    # 行业热度榜（热度值 + 上榜解读）
-    (frozenset({"热度值","排行榜获取时间"}), "hot_rank", {
-        "交易日期":"date","股票代码":"code_keep","股票名称":"name","排行":"rank","热度值":"hot","标签":"tag"}),
+    # 行业热度榜 → hot_rank_ths（真实库中文列，恒等；跨市场码原样保留）
+    (frozenset({"热度值","排行榜获取时间"}), "hot_rank_ths", {
+        "交易日期":("交易日期","date"),"数据类型":"数据类型","股票代码":("股票代码","code_keep"),
+        "股票名称":"股票名称","排行":"排行","涨跌幅%":"涨跌幅%","当前价格":"当前价格",
+        "热度值":"热度值","标签":"标签","排行榜获取时间":"排行榜获取时间","上榜解读":"上榜解读"}),
     # ST 列表（真实库中文列，恒等映射）
     (frozenset({"ST类型"}), "st_stock", {
         "股票代码":("股票代码","code"),"股票名称":"股票名称",
@@ -214,12 +220,7 @@ SOURCE_MAP = [
     (frozenset({"更名日期","更名前简称"}), "stock_rename", {
         "代码":("代码","code"),"名称":"名称","更名日期":("更名日期","date"),
         "更名前简称":"更名前简称","更名后简称":"更名后简称","证券类型":"证券类型"}),
-    # 退市股票列表
-    (frozenset({"退市日期","实控人名称"}), "stock_delist", {
-        "TS代码":"ts_code","股票代码":"code","股票名称":"name","上市日期":"list_date","退市日期":"delist_date"}),
-    # ETF 基础信息
-    (frozenset({"ETF代码","跟踪指数代码"}), "etf_info", {
-        "ETF代码":"etf_code","ETF简称":"name","跟踪指数代码":"index_code","上市日期":"list_date","ETF类型":"etf_type"}),
+    # 退市股票列表 / ETF 基础信息：真实库无对应表，暂不导入（保留 CSV 由 sync 报未识别）
     # 财务信息（真实库中文列，恒等映射）
     (frozenset({"流通股本","股东人数"}), "fin_company_snapshot", {
         "股票代码":("股票代码","code"),"股票名称":"股票名称","市场":"市场",
@@ -243,96 +244,107 @@ SOURCE_MAP = [
         "买入成交笔数(万笔)":("买入成交笔数(万笔)","num","万笔"),
         "卖出成交金额(亿元)":("卖出成交金额(亿元)","num","亿元"),
         "卖出成交笔数(万笔)":("卖出成交笔数(万笔)","num","万笔")}),
-    # 分钟线（板块指数/指数/个股；指数包无「成交量」列，签名用公共列，成交量作可选映射）
+    # 分钟线（真实库按周期分表 minute_1min/5min/15min/30min/60min；列 market/code/dt/OHLC/volume/amount）
     (frozenset({"时间","代码","名称","开盘价","收盘价","最高价","最低价","成交额","涨幅","振幅"}),
      "minute_kline", {
-         "时间":"dt","代码":"code","名称":"name","开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
-         "成交量":("volume","手"),"成交额":("amount","元"),"涨幅":"pct_chg","振幅":"amplitude"}),
-    # 资产负债表（关键字段）
-    (frozenset({"股票代码","公告日期","报告期","报表类型"}), "balance_sheet", {
-        "股票代码":"code","公告日期":"date","报告期":"report_period","报表类型":"report_type",
-        "期末总股本":("total_share","股"),"股东权益合计(含少数股东权益)":("equity","元"),
-        "货币资金":("cash","元"),"应收账款":("receivable","元"),"存货":("inventory","元"),
-        "营业总收入":("revenue","元"),"营业总成本":("cost","元"),"净利润":("net_profit","元")}),
-    # 财务指标（真实库中文列，恒等映射关键字段）
+         "时间":("dt","dt"),"代码":("code","code"),
+         "开盘价":("open","num",""),"最高价":("high","num",""),"最低价":("low","num",""),"收盘价":("close","num",""),
+         "成交量":("volume","num","手"),"成交额":("amount","num","元")}),
+    # 资产负债表 → fin_balance（真实库中文列，保留所有列 + code/date 归一）
+    (frozenset({"股票代码","公告日期","报告期","报表类型"}), "fin_balance", {
+        "*": None, "股票代码":("股票代码","code"),"公告日期":("公告日期","date")}),
+    # 财务指标 → fin_indicator（真实库中文列，保留所有列 + code/date 归一）
     (frozenset({"股票代码","公告日期","报告期","基本每股收益"}), "fin_indicator", {
+        "*": None, "股票代码":("股票代码","code"),"公告日期":("公告日期","date")}),
+    # 财报披露计划 → fin_schedule（真实库中文列，恒等）
+    (frozenset({"股票代码","报告期","预约披露日期"}), "fin_schedule", {
+        "股票代码":("股票代码","code"),"报告期":"报告期","公告日期":("公告日期","date"),
+        "预约披露日期":("预约披露日期","date"),"实际披露日期":("实际披露日期","date")}),
+    # 限售股解禁 → fin_restricted（真实库中文列，恒等）
+    (frozenset({"股票代码","公告日期","解禁日期","流通股份(股)"}), "fin_restricted", {
+        "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"解禁日期":("解禁日期","date"),
+        "流通股份(股)":("流通股份(股)","num","股"),"流通股份占总股本比例(%)":("流通股份占总股本比例(%)","num",""),
+        "股东名称":"股东名称","股份类型":"股份类型"}),
+    # 题材成分 → theme_stock（真实库中文列，恒等）
+    (frozenset({"题材代码","题材名称","成分股票代码","交易日期"}), "theme_stock", {
+        "题材代码":"题材代码","题材名称":"题材名称","成分股票名称":"成分股票名称",
+        "成分股票代码":"成分股票代码","交易日期":("交易日期","date"),
+        "描述":"描述","人气值":"人气值"}),
+    # 业绩快报 → fin_express（真实库中文列，恒等）
+    (frozenset({"股票代码","公告日期","报告期","营业收入(元)"}), "fin_express", {
         "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"报告期":"报告期",
-        "基本每股收益":("基本每股收益","num",""),"稀释每股收益":("稀释每股收益","num",""),
-        "毛利":("毛利","num",""),"流动比率":("流动比率","num",""),"速动比率":("速动比率","num","")}),
-    # 财报披露计划
-    (frozenset({"股票代码","报告期","预约披露日期"}), "fin_disclosure", {
-        "股票代码":"code","报告期":"report_period","预约披露日期":"scheduled_date","实际披露日期":"actual_date"}),
-    # 限售股解禁
-    (frozenset({"股票代码","公告日期","解禁日期","流通股份(股)"}), "share_unlock", {
-        "股票代码":"code","公告日期":"date","解禁日期":"unlock_date",
-        "流通股份(股)":("shares","股"),"流通股份占总股本比例(%)":("ratio","%"),"股东名称":"holder","股份类型":"share_type"}),
-    # 题材成分
-    (frozenset({"题材代码","题材名称","成分股票代码","交易日期"}), "theme_component", {
-        "题材代码":"theme_code","题材名称":"theme_name","成分股票名称":"stock_name","成分股票代码":"stock_code",
-        "交易日期":"date","描述":"desc","人气值":"hot"}),
-    # 业绩快报
-    (frozenset({"股票代码","公告日期","报告期","营业收入(元)"}), "performance_express", {
-        "股票代码":"code","公告日期":"date","报告期":"report_period",
-        "营业收入(元)":("revenue","元"),"营业利润(元)":("op_profit","元"),
-        "利润总额(元)":("total_profit","元"),"净利润(元)":("net_profit","元"),
-        "总资产(元)":("total_assets","元"),"每股收益(摊薄)(元)":("eps","元"),
-        "净资产收益率(摊薄)(%)":("roe","%"),"业绩简要说明":"summary"}),
-    # 业绩预告
-    (frozenset({"股票代码","公告日期","报告期","预告类型"}), "performance_forecast", {
-        "股票代码":"code","公告日期":"date","报告期":"report_period",
-        "预告类型":"forecast_type","净利润变动幅度下限(%)":("profit_change_low","%"),
-        "净利润变动幅度上限(%)":("profit_change_high","%"),
-        "预告净利润下限(万元)":("forecast_net_low","万元"),"预告净利润上限(万元)":("forecast_net_high","万元"),
-        "上年同期归母净利润(万元)":("last_year_net","万元"),"预告摘要":"summary","业绩变动原因":"reason"}),
-    # 主营业务构成
-    (frozenset({"股票代码","报告期","主营业务来源"}), "main_business", {
-        "股票代码":"code","报告期":"report_period","类型":"type","主营业务来源":"source",
-        "主营业务收入(元)":("revenue","元"),"主营业务利润(元)":("profit","元"),
-        "主营业务成本(元)":("cost","元"),"货币代码":"currency"}),
-    # 分红送股
-    (frozenset({"股票代码","分红年度","预案公告日"}), "dividend", {
-        "股票代码":"code","分红年度":"year","预案公告日":"ann_date","实施进度":"progress",
-        "每股送股比例":("send_ratio","股"),"每股转增比例":("transfer_ratio","股"),
-        "每股分红（税前）":("dividend_pre","元"),"除权除息日":"ex_date"}),
-    # 分红配股
-    (frozenset({"股票代码","公告日期","送股(股)"}), "allotment", {
-        "股票代码":"code","公告日期":"date","送股(股)":("send_share","股"),
-        "转增(股)":("transfer_share","股"),"派息(税前)(元)":("dividend","元"),
-        "配股方案(每10股配股股数)":("allot_plan","股"),"配股价格(元)":("allot_price","元"),
-        "募集资金合计(元)":("raised","元")}),
-    # 前十大股东 / 前十大流通股东（表头相同，靠文件名区分）
-    (frozenset({"股票代码","公告日期","报告期","股东名称"}), "top_holder", {
-        "股票代码":"code","公告日期":"date","报告期":"report_period","股东名称":"holder",
-        "持股数量":("shares","股"),"持股比例(%)":("ratio","%"),
-        "流通股占比(%)":("float_ratio","%"),"持股变动":"change","股东类型":"holder_type"}),
-    # 现金流量表（关键字段）
-    (frozenset({"股票代码","公告日期","报告期","经营活动产生的现金流量净额"}), "cash_flow", {
-        "股票代码":"code","公告日期":"date","报告期":"report_period","净利润":("net_profit","元"),
-        "经营活动产生的现金流量净额":("operating_cf","元"),
-        "投资活动产生的现金流量净额":("investing_cf","元"),
-        "筹资活动产生的现金流量净额":("financing_cf","元"),
-        "现金及现金等价物净增加额":("net_cash","元")}),
-    # 股东人数
-    (frozenset({"股票代码","公告日期","截止日期","股东户数"}), "holder_count", {
-        "股票代码":"code","公告日期":"date","截止日期":"end_date","股东户数":("holder_num","户")}),
-    # 股权质押明细
-    (frozenset({"股票代码","公告日期","股东名称","质押数量(万股)"}), "pledge_detail", {
-        "股票代码":"code","公告日期":"date","股东名称":"holder","股东类型":"holder_type",
-        "质押数量(万股)":("pledge_amount","万股"),"质押开始日期":"start_date","质押结束日期":"end_date",
-        "是否已解押":"released","质押方":"pledgee"}),
-    # 股权质押统计
-    (frozenset({"股票代码","截止日期","质押次数"}), "pledge_stat", {
-        "股票代码":"code","截止日期":"end_date","质押次数":("pledge_count","次"),
-        "无限售股质押数量(万)":("unrestricted_pledge","万"),"限售股质押数量(万)":("restricted_pledge","万"),
-        "总股本(万)":("total_share","万"),"质押比例(%)":("pledge_ratio","%")}),
-    # 财务审计意见
-    (frozenset({"股票代码","公告日期","报告期","审计结果"}), "audit_opinion", {
-        "股票代码":"code","公告日期":"date","报告期":"report_period","审计结果":"audit_result",
-        "审计总费用":("audit_fee","元"),"会计事务所":"accounting_firm","签字会计师":"signer"}),
+        "营业收入(元)":("营业收入(元)","num","元"),"营业利润(元)":("营业利润(元)","num","元"),
+        "利润总额(元)":("利润总额(元)","num","元"),"净利润(元)":("净利润(元)","num","元"),
+        "总资产(元)":("总资产(元)","num","元"),"每股收益(摊薄)(元)":("每股收益(摊薄)(元)","num",""),
+        "净资产收益率(摊薄)(%)":("净资产收益率(摊薄)(%)","num",""),"业绩简要说明":"业绩简要说明"}),
+    # 业绩预告 → fin_forecast（真实库中文列，恒等）
+    (frozenset({"股票代码","公告日期","报告期","预告类型"}), "fin_forecast", {
+        "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"报告期":"报告期",
+        "预告类型":"预告类型","净利润变动幅度下限(%)":("净利润变动幅度下限(%)","num",""),
+        "净利润变动幅度上限(%)":("净利润变动幅度上限(%)","num",""),
+        "预告净利润下限(万元)":("预告净利润下限(万元)","num","万元"),
+        "预告净利润上限(万元)":("预告净利润上限(万元)","num","万元"),
+        "上年同期归母净利润(万元)":("上年同期归母净利润(万元)","num","万元"),
+        "预告摘要":"预告摘要","业绩变动原因":"业绩变动原因"}),
+    # 主营业务构成 → fin_main_biz（真实库中文列，恒等）
+    (frozenset({"股票代码","报告期","主营业务来源"}), "fin_main_biz", {
+        "股票代码":("股票代码","code"),"报告期":"报告期","类型":"类型","主营业务来源":"主营业务来源",
+        "主营业务收入(元)":("主营业务收入(元)","num","元"),"主营业务利润(元)":("主营业务利润(元)","num","元"),
+        "主营业务成本(元)":("主营业务成本(元)","num","元"),"货币代码":"货币代码"}),
+    # 分红送股 → fin_dividend（真实库中文列，恒等）
+    (frozenset({"股票代码","分红年度","预案公告日"}), "fin_dividend", {
+        "股票代码":("股票代码","code"),"分红年度":"分红年度","预案公告日":("预案公告日","date"),
+        "实施进度":"实施进度","每股送股比例":("每股送股比例","num",""),
+        "每股转增比例":("每股转增比例","num",""),
+        "每股分红（税前）":("每股分红（税前）","num",""),"除权除息日":("除权除息日","date")}),
+    # 分红配股 → fin_rights_issue（真实库中文列，恒等）
+    (frozenset({"股票代码","公告日期","送股(股)"}), "fin_rights_issue", {
+        "股票代码":("股票代码","code"),"股票名称":"股票名称","公告日期":("公告日期","date"),
+        "送股(股)":("送股(股)","num","股"),"转增(股)":("转增(股)","num","股"),
+        "派息(税前)(元)":("派息(税前)(元)","num","元"),
+        "配股方案(每10股配股股数)":("配股方案(每10股配股股数)","num",""),
+        "配股价格(元)":("配股价格(元)","num","元"),"募集资金合计(元)":("募集资金合计(元)","num","元")}),
+    # 前十大股东 / 前十大流通股东（表头相同，靠文件名区分）→ fin_top10_holder / fin_top10_float
+    (frozenset({"股票代码","公告日期","报告期","股东名称"}), "fin_top10_holder", {
+        "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"报告期":"报告期",
+        "股东名称":"股东名称","持股数量":("持股数量","num",""),
+        "持股比例(%)":("持股比例(%)","num",""),"流通股占比(%)":("流通股占比(%)","num",""),
+        "持股变动":"持股变动","股东类型":"股东类型"}),
+    # 现金流量表 → fin_cashflow（真实库中文列，保留所有列 + code/date 归一）
+    (frozenset({"股票代码","公告日期","报告期","经营活动产生的现金流量净额"}), "fin_cashflow", {
+        "*": None, "股票代码":("股票代码","code"),"公告日期":("公告日期","date")}),
+    # 股东人数 → fin_holder_num（真实库中文列，恒等）
+    (frozenset({"股票代码","公告日期","截止日期","股东户数"}), "fin_holder_num", {
+        "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"截止日期":("截止日期","date"),
+        "股东户数":("股东户数","num","")}),
+    # 股权质押明细 → fin_pledge_detail（真实库中文列，恒等）
+    (frozenset({"股票代码","公告日期","股东名称","质押数量(万股)"}), "fin_pledge_detail", {
+        "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"股东名称":"股东名称",
+        "股东类型":"股东类型","质押数量(万股)":("质押数量(万股)","num","万股"),
+        "质押开始日期":("质押开始日期","date"),"质押结束日期":("质押结束日期","date"),
+        "是否已解押":"是否已解押","解押日期":("解押日期","date"),"质押方":"质押方"}),
+    # 股权质押统计 → fin_pledge_stat（真实库中文列，恒等）
+    (frozenset({"股票代码","截止日期","质押次数"}), "fin_pledge_stat", {
+        "股票代码":("股票代码","code"),"截止日期":("截止日期","date"),
+        "质押次数":("质押次数","num",""),"无限售股质押数量(万)":("无限售股质押数量(万)","num",""),
+        "限售股质押数量(万)":("限售股质押数量(万)","num",""),
+        "总股本(万)":("总股本(万)","num",""),"质押比例(%)":("质押比例(%)","num","")}),
+    # 财务审计意见 → fin_audit（真实库中文列，恒等）
+    (frozenset({"股票代码","公告日期","报告期","审计结果"}), "fin_audit", {
+        "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"报告期":"报告期",
+        "审计结果":"审计结果","审计总费用":("审计总费用","num",""),
+        "会计事务所":"会计事务所","签字会计师":"签字会计师"}),
+    # 股票列表 → stock_info（真实库英文列）
+    (frozenset({"TS代码","股票代码","实控人名称"}), "stock_info", {
+        "TS代码":"ts_code","股票代码":("code","code"),"股票名称":"name",
+        "地域":"area","所属行业":"industry","股票全称":"fullname","英文全称":"enname",
+        "拼音缩写":"pinyin","市场类型":"market","交易所代码":"exchange","交易货币":"currency",
+        "上市状态":"list_status","上市日期":("list_date","date"),"退市日期":("delist_date","date"),
+        "沪深港通标的":"hs_connect"}),
 ]
 
 #: 表头签名相同、需靠文件名区分的表（前十大股东 vs 前十大流通股东）
-_NAME_OVERRIDE = {"前十大流通股东": "top_float_holder"}
+_NAME_OVERRIDE = {"前十大流通股东": "fin_top10_float"}
 
 # ── QC 断言 ──
 def qc_assertions(con):
@@ -362,7 +374,9 @@ def _apply_map(row, colmap):
       ("列名", "num", "单位") -> normalize_num
     """
     out = {}
+    keep_rest = "*" in colmap
     for src, tgt in colmap.items():
+        if src == "*": continue
         if src not in row: continue
         if isinstance(tgt, tuple):
             col, typ = tgt[0], tgt[1]
@@ -376,6 +390,10 @@ def _apply_map(row, colmap):
             else: out[col] = row[src]
         else:
             out[tgt] = row[src]
+    if keep_rest:
+        for src, val in row.items():
+            if src not in colmap and src not in out:
+                out[src] = val  # 保留未映射列（恒等，原样字符串）
     return out
 
 # ── 文件扫描：csv + zip（非递归，跳过 ._ 前缀 macOS 元数据）──
@@ -454,27 +472,8 @@ def qc_all_pass(qc):
     return all(v == 0 for v in qc.values())
 
 
-#: 各表主键（供 INSERT OR REPLACE 判重；无主键的表 duckDB 会直接报错）
-_PK = {
-    "minute_kline": ["code", "dt", "period"],
-    "balance_sheet": ["code", "date", "report_period", "report_type"],
-    "fin_indicator": ["code", "date", "report_period"],
-    "fin_disclosure": ["code", "report_period"],
-    "share_unlock": ["code", "unlock_date", "holder"],
-    "theme_component": ["theme_code", "stock_code", "date"],
-    "performance_express": ["code", "date", "report_period"],
-    "performance_forecast": ["code", "date", "report_period"],
-    "main_business": ["code", "report_period", "source"],
-    "dividend": ["code", "year", "ann_date"],
-    "allotment": ["code", "date"],
-    "top_holder": ["code", "date", "holder"],
-    "top_float_holder": ["code", "date", "holder"],
-    "cash_flow": ["code", "date", "report_period"],
-    "holder_count": ["code", "end_date"],
-    "pledge_detail": ["code", "date", "holder", "start_date"],
-    "pledge_stat": ["code", "end_date"],
-    "audit_opinion": ["code", "date", "report_period"],
-}
+#: 各表主键（仅供 sync 新建表时用；对齐后所有目标表均已在真实库存在，故留空）
+_PK = {}
 
 
 def _ensure_table(con, tbl, colmap):
@@ -494,8 +493,8 @@ def _ensure_table(con, tbl, colmap):
         else:
             name, typ = tgt, "VARCHAR"
         cols.append(f'"{name}" {typ}')
-    if tbl == "minute_kline":
-        cols.append('"period" VARCHAR')
+    if tbl.startswith("minute_"):
+        cols.append('"market" VARCHAR')
     pk = _PK.get(tbl, [])
     pk_sql = ""
     if pk:
@@ -529,11 +528,14 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, c
             reader = csv.DictReader(fp)
             header = reader.fieldnames or []
             tbl, colmap = _detect(header)
-            if tbl == "top_holder":
+            if tbl == "fin_top10_holder":
                 for kw, override_tbl in _NAME_OVERRIDE.items():
                     if kw in name:
                         tbl = override_tbl
                         break
+            # 分钟线按周期分表：minute_kline → minute_{period}
+            if tbl == "minute_kline" and period:
+                tbl = f"minute_{period}"
             if tbl is None:
                 unknown.append(stream_name)
                 file_fully_recognized = False
@@ -550,14 +552,11 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, c
                          if isinstance(v, tuple) and len(v) > 1 and v[1] == "code"]
             if code_cols:
                 rows = [r for r in rows if r.get(code_cols[0]) is not None]
-            # daily/limit_price 需要 market 列（从 code 推导）
-            if tbl in ("daily", "limit_price"):
+            # daily/limit_price/minute_* 需要 market 列（从 code 推导）
+            if tbl in ("daily", "limit_price") or tbl.startswith("minute_"):
                 for r in rows:
                     if r.get("code") is not None:
                         r["market"] = normalize_market(r["code"])
-            if tbl == "minute_kline" and period:
-                for r in rows:
-                    r["period"] = period
             if tbl in _PK:
                 pk_cols = _PK[tbl]
                 rows = [r for r in rows if all(r.get(c) is not None for c in pk_cols)]
