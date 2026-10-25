@@ -465,37 +465,66 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
 
 
 def cleanup_imported(download_dir, db_path, dates, dry_run=True):
-    """验证指定日期的日频数据已在库，然后删除该日期的日频 csv 源文件。
+    """验证指定日期的数据已在库，然后删除源文件（日频 csv + 分钟线 zip）。
 
-    只删 *.csv（日频），不碰 *.zip（分钟线/财务，可能尚未导入）。
+    日频：验证 daily/tech_factor_qfq/limit_price 该日期行数>0。
+    分钟线：验证 minute_kline 该日期+周期的行数>0（表不存在则跳过、不删）。
     """
     con = duckdb.connect(db_path, read_only=True)
     removed = []
+    minute_exists = con.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name='minute_kline'").fetchone()[0] > 0
+
     for d in dates:
         d_fmt = datetime.datetime.strptime(d, "%Y%m%d").strftime("%Y-%m-%d")
+
+        # --- 日频 csv ---
         detail = {}
-        ok = True
+        daily_ok = True
         for tbl in ["daily", "tech_factor_qfq", "limit_price"]:
             n = con.execute(f"SELECT count(*) FROM {tbl} WHERE date=?", [d_fmt]).fetchone()[0]
             detail[tbl] = n
             if n == 0:
-                ok = False
-        status = "✅ 已导入" if ok else "❌ 未完整导入"
-        print(f"  {d}: {status} {detail}")
-        if not ok:
-            print(f"    → 保留源文件（数据缺失，勿删）")
-            continue
-        for f in sorted(glob.glob(os.path.join(download_dir, f"*{d}*.csv"))):
-            if os.path.basename(f).startswith("._"):
-                continue
-            if dry_run:
-                print(f"    [dry-run] 将删除 {os.path.basename(f)}")
-            else:
-                try:
-                    os.remove(f)
-                    removed.append(f)
-                except OSError as e:
-                    print(f"    ⚠️ 删除失败 {os.path.basename(f)}: {e}")
+                daily_ok = False
+        print(f"  {d}: {'✅ 日频已导入' if daily_ok else '❌ 日频未完整导入'} {detail}")
+        if daily_ok:
+            for f in sorted(glob.glob(os.path.join(download_dir, f"*{d}*.csv"))):
+                if os.path.basename(f).startswith("._"):
+                    continue
+                if dry_run:
+                    print(f"    [dry-run] 将删除 {os.path.basename(f)}")
+                else:
+                    try:
+                        os.remove(f)
+                        removed.append(f)
+                    except OSError as e:
+                        print(f"    ⚠️ 删除失败 {os.path.basename(f)}: {e}")
+        else:
+            print(f"    → 日频数据缺失，保留日频 csv")
+
+        # --- 分钟线 zip ---
+        if not minute_exists:
+            print(f"    ℹ️ minute_kline 表不存在，分钟线未导入，保留全部分钟线 zip")
+        else:
+            for period in ["1min", "5min", "15min", "30min", "60min"]:
+                n = con.execute(
+                    "SELECT count(*) FROM minute_kline WHERE period=? AND CAST(dt AS DATE)=?",
+                    [period, d_fmt]).fetchone()[0]
+                if n == 0:
+                    print(f"    {d}_{period}: ❌ 未导入（保留 zip）")
+                    continue
+                for f in sorted(glob.glob(os.path.join(download_dir, f"*{d}_{period}*.zip"))):
+                    if os.path.basename(f).startswith("._"):
+                        continue
+                    if dry_run:
+                        print(f"    [dry-run] 将删除 {os.path.basename(f)}")
+                    else:
+                        try:
+                            os.remove(f)
+                            removed.append(f)
+                        except OSError as e:
+                            print(f"    ⚠️ 删除失败 {os.path.basename(f)}: {e}")
+
     con.close()
     return removed
 
