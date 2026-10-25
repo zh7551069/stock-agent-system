@@ -699,6 +699,16 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, c
     if unknown and not dry_run:
         print(f"  ⚠️ 未识别 {len(unknown)} 个（表头无匹配，不删除）: {unknown[:5]}...")
     if not dry_run:
+        # 交易日历从 daily 反推（有日频数据 = 交易日），保证 trade_cal 跟上数据水位
+        try:
+            before = con.execute("SELECT count(*) FROM trade_cal").fetchone()[0]
+            con.execute("""INSERT INTO trade_cal (date) SELECT DISTINCT date FROM daily
+                           WHERE date NOT IN (SELECT date FROM trade_cal)""")
+            after = con.execute("SELECT count(*) FROM trade_cal").fetchone()[0]
+            if after > before:
+                print(f"  📅 trade_cal 新增 {after - before} 个交易日（从 daily 反推）")
+        except Exception as e:
+            print(f"  ⚠️ trade_cal 更新失败: {e}")
         con.commit()
 
     qc = qc_assertions(con)
