@@ -25,7 +25,7 @@ def normalize_code(c):
     if m: return m.group(2).lower() + m.group(1)      # 000001.SZ → sz000001
     m = re.match(r'^(sh|sz|bj)(\d{6})$', s, re.I)
     if m: return m.group(1).lower() + m.group(2)      # SH600519 → sh600519
-    if re.match(r'^88\d{4}$', s):                      # 通达信板块指数 880xxx，保留原样
+    if re.match(r'^\d{6}$', s):                        # 裸 6 位 = 指数/板块码（880板块/000上证/399深证），保留原样
         return s
     return None
 
@@ -306,7 +306,8 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
         name = os.path.basename(f)
         period = None
         if is_zip:
-            m = re.search(r"_(\d+min)\.zip$", name)
+            # 不锚定 .zip$：容忍手动下载重名产生的序号（如 60min(7).zip）
+            m = re.search(r"_(\d+min)", name)
             period = m.group(1) if m else None
         file_fully_recognized = True
         file_imported_any = False
