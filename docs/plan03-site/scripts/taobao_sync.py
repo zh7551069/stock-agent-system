@@ -55,25 +55,42 @@ def normalize_datetime(d):
         except ValueError: pass
     return None
 
+def normalize_datestr(d):
+    """日期 → 'YYYYMMDD' 字符串（真实库 suspension.交易日期 是 VARCHAR YYYYMMDD）。"""
+    r = normalize_date(d)
+    return r.strftime("%Y%m%d") if r else None
+
+_MARKET_OF_PREFIX = {"sh": "hs", "sz": "hs", "bj": "bj"}
+
+def normalize_market(c):
+    """从 code 推导 market（daily/limit_price 的 market 列，sh/sz→hs，bj→bj）。"""
+    s = normalize_code(c)
+    if not s: return None
+    return _MARKET_OF_PREFIX.get(s[:2])
+
 # ── SOURCE_MAP：表头签名 → (目标表, {源列:(目标列,单位)}) ──
 # 签名 = 表头里能唯一区分该类型的关键列集合；匹配 = 签名 ⊆ 表头
 # 单位 None 表示 code/date 专用归一
 SOURCE_MAP = [
-    # 日线行情
+    # 日线行情（真实库 daily：market/code/date/OHLC/volume/amount/pct_chg）
     (frozenset({"开盘价","最高价","最低价","收盘价","成交量(手)","成交额(千元)","市盈率"}), "daily", {
-        "股票代码":"code","交易日期":"date","开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
-        "成交量(手)":("volume","手"),"成交额(千元)":("amount","千元"),"涨跌幅":"pct_chg","换手率":("turnover","%"),
-        "总市值(万元)":("total_mv","万元"),"流通市值(万元)":("circ_mv","万元")}),
+        "股票代码":("code","code"),"交易日期":("date","date"),
+        "开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
+        "成交量(手)":("volume","num","手"),"成交额(千元)":("amount","num","千元"),"涨跌幅":("pct_chg","num","")}),
     # 技术因子（前复权口径权威，code B 套）
     (frozenset({"复权因子","MA5","MA10","MA20"}), "tech_factor_qfq", {
-        "股票代码":"code","交易日期":"date","开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
-        "成交量(手)":("vol_hand","手"),"成交额(千元)":("amount_k","千元"),"涨跌幅(%)":"pct_chg","换手率(%)":"turnover"}),
-    # 每日涨跌停价格
+        "股票代码":("code","code"),"交易日期":("date","date"),
+        "开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
+        "成交量(手)":("vol_hand","num","手"),"成交额(千元)":("amount_k","num","千元"),
+        "涨跌幅(%)":("pct_chg","num",""),"换手率(%)":("turnover","num","")}),
+    # 每日涨跌停价格（真实库 limit_price：market/code/date/prev_close/limit_up/limit_down）
     (frozenset({"昨日收盘价","涨停价","跌停价"}), "limit_price", {
-        "股票代码":"code","交易日期":"date","昨日收盘价":"prev_close","涨停价":"limit_up","跌停价":"limit_down"}),
-    # 每日停复牌
+        "股票代码":("code","code"),"交易日期":("date","date"),
+        "昨日收盘价":("prev_close","num",""),"涨停价":("limit_up","num",""),"跌停价":("limit_down","num","")}),
+    # 每日停复牌（真实库 suspension 中文列，交易日期为 YYYYMMDD 字符串）
     (frozenset({"停复牌时间段","停复牌类型"}), "suspension", {
-        "股票代码":"code","交易日期":"date","停复牌时间段":"period","停复牌类型":"type"}),
+        "股票代码":("股票代码","code"),"交易日期":("交易日期","datestr"),
+        "停复牌时间段":"停复牌时间段","停复牌类型":"停复牌类型"}),
     # 大盘资金流向
     (frozenset({"上证收盘点位","深证收盘点位"}), "market_flow_daily", {
         "交易日期":"date","上证收盘点位":"sh_close","上证涨跌幅(%)":"sh_pct","深证收盘点位":"sz_close","深证涨跌幅(%)":"sz_pct",
@@ -254,26 +271,40 @@ def _detect(header):
     return None, None
 
 def _apply_map(row, colmap):
+    """colmap value 格式：
+      "列名"                 -> 原样字符串
+      ("列名", "code")       -> normalize_code
+      ("列名", "code_keep")  -> 原样保留（跨市场码）
+      ("列名", "date")       -> normalize_date
+      ("列名", "dt")         -> normalize_datetime
+      ("列名", "num", "单位") -> normalize_num
+    """
     out = {}
     for src, tgt in colmap.items():
         if src not in row: continue
-        if tgt == "code": out[tgt] = normalize_code(row[src])
-        elif tgt == "code_keep": out["code"] = str(row[src]).strip() or None   # 跨市场码（美股/港股/板块）原样保留
-        elif tgt == "date": out[tgt] = normalize_date(row[src])
-        elif tgt == "dt": out[tgt] = normalize_datetime(row[src])
-        elif isinstance(tgt, tuple): out[tgt[0]] = normalize_num(row[src], tgt[1])
-        else: out[tgt] = row[src]
+        if isinstance(tgt, tuple):
+            col, typ = tgt[0], tgt[1]
+            if typ == "code": out[col] = normalize_code(row[src])
+            elif typ == "code_keep": out[col] = str(row[src]).strip() or None
+            elif typ == "date": out[col] = normalize_date(row[src])
+            elif typ == "datestr": out[col] = normalize_datestr(row[src])
+            elif typ == "market": out[col] = normalize_market(row[src])
+            elif typ == "dt": out[col] = normalize_datetime(row[src])
+            elif typ == "num": out[col] = normalize_num(row[src], tgt[2] if len(tgt) > 2 else "")
+            else: out[col] = row[src]
+        else:
+            out[tgt] = row[src]
     return out
 
 # ── 文件扫描：csv + zip（非递归，跳过 ._ 前缀 macOS 元数据）──
-def _iter_files(download_dir):
+def _iter_files(download_dir, csv_only=False):
     for f in sorted(glob.glob(os.path.join(download_dir, "*"))):
         name = os.path.basename(f)
         if name.startswith("._"):
             continue
         if name.endswith(".csv"):
             yield (f, False)
-        elif name.endswith(".zip"):
+        elif name.endswith(".zip") and not csv_only:
             yield (f, True)
 
 
@@ -372,11 +403,14 @@ def _ensure_table(con, tbl, colmap):
         return
     cols = []
     for tgt in colmap.values():
-        name = tgt[0] if isinstance(tgt, tuple) else tgt
-        if name == "date": typ = "DATE"
-        elif name == "dt": typ = "TIMESTAMP"
-        elif isinstance(tgt, tuple): typ = "DOUBLE"
-        else: typ = "VARCHAR"
+        if isinstance(tgt, tuple):
+            name, marker = tgt[0], tgt[1]
+            if marker == "date": typ = "DATE"
+            elif marker == "dt": typ = "TIMESTAMP"
+            elif marker == "num": typ = "DOUBLE"
+            else: typ = "VARCHAR"
+        else:
+            name, typ = tgt, "VARCHAR"
         cols.append(f'"{name}" {typ}')
     if tbl == "minute_kline":
         cols.append('"period" VARCHAR')
@@ -388,11 +422,19 @@ def _ensure_table(con, tbl, colmap):
     con.execute(f'CREATE TABLE "{tbl}" ({", ".join(cols)}{pk_sql})')
 
 
-def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
+def _has_pk(con, tbl):
+    """表是否有主键约束。"""
+    return con.execute(
+        "SELECT count(*) FROM duckdb_constraints() WHERE table_name=? AND constraint_type='PRIMARY KEY'",
+        [tbl]).fetchone()[0] > 0
+
+
+def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, csv_only=False,
+         only_tables=None):
     con = duckdb.connect(db_path)
     imported, unknown = {}, []
     removable = []  # 完全识别 + 有导入的文件，验证通过后可删除
-    for f, is_zip in _iter_files(download_dir):
+    for f, is_zip in _iter_files(download_dir, csv_only=csv_only):
         name = os.path.basename(f)
         period = None
         if is_zip:
@@ -415,11 +457,22 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
                 file_fully_recognized = False
                 fp.close()
                 continue
+            if only_tables and tbl not in only_tables:
+                fp.close()
+                continue
             file_imported_any = True
             rows = [_apply_map(r, colmap) for r in reader]
             fp.close()
-            if "code" in colmap.values():
-                rows = [r for r in rows if r.get("code") is not None]
+            # 过滤 code 归一失败（None）的行
+            code_cols = [v[0] for v in colmap.values()
+                         if isinstance(v, tuple) and len(v) > 1 and v[1] == "code"]
+            if code_cols:
+                rows = [r for r in rows if r.get(code_cols[0]) is not None]
+            # daily/limit_price 需要 market 列（从 code 推导）
+            if tbl in ("daily", "limit_price"):
+                for r in rows:
+                    if r.get("code") is not None:
+                        r["market"] = normalize_market(r["code"])
             if tbl == "minute_kline" and period:
                 for r in rows:
                     r["period"] = period
@@ -432,9 +485,22 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
             elif rows:
                 _ensure_table(con, tbl, colmap)
                 cols = list(rows[0].keys())
-                con.executemany(
-                    f"INSERT OR REPLACE INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
-                    [tuple(r[c] for c in cols) for r in rows])
+                if _has_pk(con, tbl):
+                    con.executemany(
+                        f"INSERT OR REPLACE INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                        [tuple(r[c] for c in cols) for r in rows])
+                else:
+                    # 无主键：按日期先删后插（覆盖重复）；无日期列则清空再插（静态表）
+                    date_vals = sorted({r["date"] for r in rows
+                                        if isinstance(r.get("date"), (datetime.date, datetime.datetime))})
+                    if date_vals:
+                        con.execute(f"DELETE FROM {tbl} WHERE date IN ({','.join('?' * len(date_vals))})",
+                                    date_vals)
+                    else:
+                        con.execute(f"DELETE FROM {tbl}")
+                    con.executemany(
+                        f"INSERT INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                        [tuple(r[c] for c in cols) for r in rows])
         if file_imported_any and file_fully_recognized:
             removable.append(f)
     if unknown and not dry_run:
@@ -547,7 +613,13 @@ if __name__ == "__main__":
         removed = cleanup_imported(DL, DB, dates, dry_run=not apply)
         print(f"\n{'已删除' if apply else '（dry-run 预览，加 --apply 才真删）'} {len(removed)} 个日频 csv")
     else:
-        result = sync(DL, DB, dry_run="--dry-run" in a, keep_source="--keep-source" in a)
+        only = None
+        if "--only-tables" in a:
+            i = a.index("--only-tables")
+            if i + 1 < len(a):
+                only = set(a[i + 1].split(","))
+        result = sync(DL, DB, dry_run="--dry-run" in a, keep_source="--keep-source" in a,
+                      csv_only="--csv-only" in a, only_tables=only)
         print(f"导入统计: {result['imported']}")
         print(f"QC 违规: {result['qc']}")
         print(f"线上验证: {result['verify']}")
