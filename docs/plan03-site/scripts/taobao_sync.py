@@ -29,6 +29,14 @@ def normalize_code(c):
         return s
     return None
 
+def normalize_code_suffix(c):
+    """code → 后缀式 000001.SZ（仅 tech_factor_qfq/tech_factor_hfq 表的 code 用）。"""
+    s = normalize_code(c)
+    if not s: return None
+    m = re.match(r'^(sh|sz|bj)(\d{6})$', s)
+    if m: return m.group(2) + "." + m.group(1).upper()
+    return s  # 裸 6 位（指数）保持原样
+
 def normalize_date(d):
     if isinstance(d, datetime.date): return d
     if isinstance(d, datetime.datetime): return d.date()
@@ -75,9 +83,9 @@ SOURCE_MAP = [
         "股票代码":("code","code"),"交易日期":("date","date"),
         "开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
         "成交量(手)":("volume","num","手"),"成交额(千元)":("amount","num","千元"),"涨跌幅":("pct_chg","num","")}),
-    # 技术因子（前复权口径权威，code B 套）
+    # 技术因子（前复权口径权威，code 后缀式 000001.SZ）
     (frozenset({"复权因子","MA5","MA10","MA20"}), "tech_factor_qfq", {
-        "股票代码":("code","code"),"交易日期":("date","date"),
+        "股票代码":("code","code_suffix"),"交易日期":("date","date"),
         "开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
         "成交量(手)":("vol_hand","num","手"),"成交额(千元)":("amount_k","num","千元"),
         "涨跌幅(%)":("pct_chg","num",""),"换手率(%)":("turnover","num","")}),
@@ -91,7 +99,7 @@ SOURCE_MAP = [
         "停复牌时间段":"停复牌时间段","停复牌类型":"停复牌类型"}),
     # 大盘资金流向
     (frozenset({"上证收盘点位","深证收盘点位"}), "market_flow_daily", {
-        "交易日期":("交易日期","date"),"上证收盘点位":("上证收盘点位","num",""),
+        "交易日期":("交易日期","datestr"),"上证收盘点位":("上证收盘点位","num",""),
         "上证涨跌幅(%)":("上证涨跌幅(%)","num",""),"深证收盘点位":("深证收盘点位","num",""),
         "深证涨跌幅(%)":("深证涨跌幅(%)","num",""),"主力净流入(元)":("主力净流入(元)","num","元"),
         "主力净流入占比(%)":("主力净流入占比(%)","num",""),
@@ -101,7 +109,7 @@ SOURCE_MAP = [
         "小单流入(元)":("小单流入(元)","num","元"),"小单占比(%)":("小单占比(%)","num","")}),
     # 个股资金流_东财（主力净流入，真实库 stock_flow_em 中文列）
     (frozenset({"今日主力净流入额（万元）","今日超大单净流入额（万元）"}), "stock_flow_em", {
-        "交易日期":("交易日期","date"),"股票代码":("股票代码","code"),"股票名称":"股票名称",
+        "交易日期":("交易日期","datestr"),"股票代码":("股票代码","code"),"股票名称":"股票名称",
         "涨跌幅":"涨跌幅","最新价":"最新价",
         "今日主力净流入额（万元）":("今日主力净流入额（万元）","num","万元"),
         "今日主力净流入净占比（%）":("今日主力净流入净占比（%）","num",""),
@@ -115,7 +123,7 @@ SOURCE_MAP = [
         "今日小单净流入占比（%）":("今日小单净流入占比（%）","num","")}),
     # 个股资金流_同花顺（资金净流入+5日主力，真实库 stock_flow_ths 中文列）
     (frozenset({"资金净流入(万元)","5日主力净额(万元)"}), "stock_flow_ths", {
-        "交易日期":("交易日期","date"),"股票代码":("股票代码","code"),"股票名称":"股票名称",
+        "交易日期":("交易日期","datestr"),"股票代码":("股票代码","code"),"股票名称":"股票名称",
         "涨跌幅":"涨跌幅","最新价":"最新价",
         "资金净流入(万元)":("资金净流入(万元)","num","万元"),
         "5日主力净额(万元)":("5日主力净额(万元)","num","万元"),
@@ -137,13 +145,14 @@ SOURCE_MAP = [
         "特大单买入量(手)":("xl_buy_vol","num","手"),"特大单买入金额(万元)":("xl_buy_amt","num","万元"),
         "特大单卖出量(手)":("xl_sell_vol","num","手"),"特大单卖出金额(万元)":("xl_sell_amt","num","万元"),
         "净流入量(手)":("net_vol","num","手"),"净流入金额(万元)":("net_amt","num","万元")}),
-    # 行业资金流
+    # 行业资金流（真实库英文列，恒等 + date 归一）
     (frozenset({"行业代码","行业名称","领涨股票名称"}), "industry_flow", {
-        "交易日期":"date","行业代码":"industry_code","行业名称":"industry_name",
-        "流入资金(亿元)":("inflow","亿元"),"流出资金(亿元)":("outflow","亿元"),"净额(亿元)":("net","亿元")}),
+        "交易日期":("date","date"),"行业代码":"industry_code","行业名称":"industry_name",
+        "流入资金(亿元)":("inflow","num","亿元"),"流出资金(亿元)":("outflow","num","亿元"),
+        "净额(亿元)":("net","num","亿元")}),
     # 板块资金流_同花顺（真实库 board_flow_ths 中文列）
     (frozenset({"板块代码","板块名称","领涨股票名称","行业涨跌幅(%)"}), "board_flow_ths", {
-        "交易日期":("交易日期","date"),"板块代码":"板块代码","板块名称":"板块名称",
+        "交易日期":("交易日期","datestr"),"板块代码":"板块代码","板块名称":"板块名称",
         "领涨股票名称":"领涨股票名称","最新价":"最新价",
         "行业涨跌幅(%)":("行业涨跌幅(%)","num",""),"行业指数":"行业指数","公司数量":"公司数量",
         "领涨股涨跌幅(%)":("领涨股涨跌幅(%)","num",""),
@@ -152,7 +161,7 @@ SOURCE_MAP = [
         "净额(亿元)":("净额(亿元)","num","亿元")}),
     # 板块资金流_东财（真实库 board_flow_em 中文列）
     (frozenset({"数据类型","板块代码","主力净流入净额(元)"}), "board_flow_em", {
-        "交易日期":("交易日期","date"),"数据类型":"数据类型","板块代码":"板块代码","板块名称":"板块名称",
+        "交易日期":("交易日期","datestr"),"数据类型":"数据类型","板块代码":"板块代码","板块名称":"板块名称",
         "板块涨跌幅(%)":("板块涨跌幅(%)","num",""),"板块最新指数":"板块最新指数",
         "主力净流入净额(元)":("主力净流入净额(元)","num","元"),
         "主力净流入占比(%)":("主力净流入占比(%)","num",""),
@@ -182,7 +191,7 @@ SOURCE_MAP = [
         "连板次数":"连板次数"}),
     # 涨停最强板块（真实库中文列，恒等）
     (frozenset({"上榜天数","连板高度","涨停家数"}), "zt_strong_board", {
-        "板块代码":"板块代码","板块名称":"板块名称","交易日期":("交易日期","date"),
+        "板块代码":"板块代码","板块名称":"板块名称","交易日期":("交易日期","datestr"),
         "涨停家数":"涨停家数","连板高度":"连板高度"}),
     # 龙虎榜明细（真实库中文列，恒等映射）
     (frozenset({"龙虎榜净买入额(元)","龙虎榜成交额(元)"}), "lhb_daily", {
@@ -209,13 +218,13 @@ SOURCE_MAP = [
         "买卖类型":"买卖类型","上榜理由":"上榜理由"}),
     # 行业热度榜 → hot_rank_ths（真实库中文列，恒等；跨市场码原样保留）
     (frozenset({"热度值","排行榜获取时间"}), "hot_rank_ths", {
-        "交易日期":("交易日期","date"),"数据类型":"数据类型","股票代码":("股票代码","code_keep"),
+        "交易日期":("交易日期","datestr"),"数据类型":"数据类型","股票代码":("股票代码","code_keep"),
         "股票名称":"股票名称","排行":"排行","涨跌幅%":"涨跌幅%","当前价格":"当前价格",
         "热度值":"热度值","标签":"标签","排行榜获取时间":"排行榜获取时间","上榜解读":"上榜解读"}),
     # ST 列表（真实库中文列，恒等映射）
     (frozenset({"ST类型"}), "st_stock", {
         "股票代码":("股票代码","code"),"股票名称":"股票名称",
-        "交易日期":("交易日期","date"),"ST类型":"ST类型","ST类型名称":"ST类型名称"}),
+        "交易日期":("交易日期","datestr"),"ST类型":"ST类型","ST类型名称":"ST类型名称"}),
     # 股票曾用名（真实库中文列，恒等映射）
     (frozenset({"更名日期","更名前简称"}), "stock_rename", {
         "代码":("代码","code"),"名称":"名称","更名日期":("更名日期","date"),
@@ -230,7 +239,7 @@ SOURCE_MAP = [
         "净利润":("净利润","num",""),"每股净资产":("每股净资产","num","")}),
     # 沪深港通资金流向（CSV 中文括号 vs 真实下划线命名）
     (frozenset({"北向资金(百万元)","南向资金(百万元)"}), "hk_connect_flow", {
-        "交易日期":("交易日期","date"),
+        "交易日期":("交易日期","datestr"),
         "港股通（上海）(百万元)":("港股通_上海_百万","num",""),
         "港股通（深圳）(百万元)":("港股通_深圳_百万","num",""),
         "沪股通(百万元)":("沪股通_百万","num",""),
@@ -239,7 +248,7 @@ SOURCE_MAP = [
         "南向资金(百万元)":("南向资金_百万","num","")}),
     # 港股通每日成交统计（真实库中文列，恒等映射）
     (frozenset({"买入成交金额(亿元)","卖出成交金额(亿元)"}), "hk_connect_daily", {
-        "交易日期":("交易日期","date"),
+        "交易日期":("交易日期","datestr"),
         "买入成交金额(亿元)":("买入成交金额(亿元)","num","亿元"),
         "买入成交笔数(万笔)":("买入成交笔数(万笔)","num","万笔"),
         "卖出成交金额(亿元)":("卖出成交金额(亿元)","num","亿元"),
@@ -268,7 +277,7 @@ SOURCE_MAP = [
     # 题材成分 → theme_stock（真实库中文列，恒等）
     (frozenset({"题材代码","题材名称","成分股票代码","交易日期"}), "theme_stock", {
         "题材代码":"题材代码","题材名称":"题材名称","成分股票名称":"成分股票名称",
-        "成分股票代码":"成分股票代码","交易日期":("交易日期","date"),
+        "成分股票代码":"成分股票代码","交易日期":("交易日期","datestr"),
         "描述":"描述","人气值":"人气值"}),
     # 业绩快报 → fin_express（真实库中文列，恒等）
     (frozenset({"股票代码","公告日期","报告期","营业收入(元)"}), "fin_express", {
@@ -286,9 +295,9 @@ SOURCE_MAP = [
         "预告净利润上限(万元)":("预告净利润上限(万元)","num","万元"),
         "上年同期归母净利润(万元)":("上年同期归母净利润(万元)","num","万元"),
         "预告摘要":"预告摘要","业绩变动原因":"业绩变动原因"}),
-    # 主营业务构成 → fin_main_biz（真实库中文列，恒等）
+    # 主营业务构成 → fin_main_biz（真实库中文列，恒等；报告期为 DATE 列）
     (frozenset({"股票代码","报告期","主营业务来源"}), "fin_main_biz", {
-        "股票代码":("股票代码","code"),"报告期":"报告期","类型":"类型","主营业务来源":"主营业务来源",
+        "股票代码":("股票代码","code"),"报告期":("报告期","date"),"类型":"类型","主营业务来源":"主营业务来源",
         "主营业务收入(元)":("主营业务收入(元)","num","元"),"主营业务利润(元)":("主营业务利润(元)","num","元"),
         "主营业务成本(元)":("主营业务成本(元)","num","元"),"货币代码":"货币代码"}),
     # 分红送股 → fin_dividend（真实库中文列，恒等）
@@ -381,6 +390,7 @@ def _apply_map(row, colmap):
         if isinstance(tgt, tuple):
             col, typ = tgt[0], tgt[1]
             if typ == "code": out[col] = normalize_code(row[src])
+            elif typ == "code_suffix": out[col] = normalize_code_suffix(row[src])
             elif typ == "code_keep": out[col] = str(row[src]).strip() or None
             elif typ == "date": out[col] = normalize_date(row[src])
             elif typ == "datestr": out[col] = normalize_datestr(row[src])
@@ -510,6 +520,76 @@ def _has_pk(con, tbl):
         [tbl]).fetchone()[0] > 0
 
 
+def _adapt_date_types(con, tbl, rows, cols):
+    """按目标表实际列类型适配日期值：DATE 列←date；BIGINT 列←YYYYMMDD 整数；VARCHAR 列保持字符串。"""
+    try:
+        col_types = {r[0]: r[1] for r in con.execute(f'DESCRIBE "{tbl}"').fetchall()}
+    except Exception:
+        return rows
+    for col in cols:
+        typ = col_types.get(col)
+        if typ not in ("DATE", "BIGINT", "VARCHAR"):
+            continue
+        for row in rows:
+            v = row.get(col)
+            if v is None:
+                continue
+            if typ == "DATE":
+                if isinstance(v, str):
+                    s = v.strip().replace("-", "")[:8]
+                    try:
+                        row[col] = datetime.datetime.strptime(s, "%Y%m%d").date()
+                    except ValueError:
+                        row[col] = None
+                elif isinstance(v, datetime.datetime):
+                    row[col] = v.date()
+            elif typ == "BIGINT":
+                if isinstance(v, (datetime.date, datetime.datetime)):
+                    row[col] = int(v.strftime("%Y%m%d"))
+                elif isinstance(v, str):
+                    s = v.strip().replace("-", "")[:8]
+                    try:
+                        row[col] = int(s)
+                    except ValueError:
+                        pass
+            elif typ == "VARCHAR":
+                if isinstance(v, (datetime.date, datetime.datetime)):
+                    row[col] = v.strftime("%Y%m%d")
+    return rows
+
+
+def _delete_for_rows(con, tbl, rows, cols):
+    """无主键表去重删除：按 csv 结构判断（按代码删 or 按日期删），避免误清全表。
+
+    按股票拆分的 csv（单股票多日期）→ DELETE WHERE code IN (...)；
+    按日期拆分的 csv（多股票单日期）→ DELETE WHERE date IN (...)。
+    """
+    code_cols = [c for c in cols if c in ("code", "股票代码", "代码", "成分股票代码", "板块代码", "题材代码")]
+    date_cols = [c for c in cols if any(k in c for k in ("日期", "时间", "date", "dt"))]
+    codes = set()
+    for c in code_cols:
+        for r in rows:
+            if r.get(c) is not None:
+                codes.add(r.get(c))
+    dates = set()
+    for c in date_cols:
+        for r in rows:
+            if r.get(c) is not None:
+                dates.add(r.get(c))
+    cc = code_cols[0] if code_cols else None
+    dc = date_cols[0] if date_cols else None
+    if cc and len(codes) == 1:
+        con.execute(f'DELETE FROM "{tbl}" WHERE "{cc}" = ?', list(codes))
+    elif dc and len(dates) == 1 and len(codes) > 1:
+        con.execute(f'DELETE FROM "{tbl}" WHERE "{dc}" = ?', list(dates))
+    elif cc and len(codes) < max(1, len(dates)):
+        con.execute(f'DELETE FROM "{tbl}" WHERE "{cc}" IN ({",".join("?" * len(codes))})', list(codes))
+    elif dc:
+        con.execute(f'DELETE FROM "{tbl}" WHERE "{dc}" IN ({",".join("?" * len(dates))})', list(dates))
+    else:
+        con.execute(f'DELETE FROM "{tbl}"')
+
+
 def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, csv_only=False,
          only_tables=None):
     con = duckdb.connect(db_path)
@@ -564,24 +644,25 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, c
             if dry_run:
                 print(f"  [dry-run] {stream_name} → {tbl}: {len(rows)} 行")
             elif rows:
-                _ensure_table(con, tbl, colmap)
-                cols = list(rows[0].keys())
-                if _has_pk(con, tbl):
-                    con.executemany(
-                        f"INSERT OR REPLACE INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
-                        [tuple(r[c] for c in cols) for r in rows])
-                else:
-                    # 无主键：按日期先删后插（覆盖重复）；无日期列则清空再插（静态表）
-                    date_vals = sorted({r["date"] for r in rows
-                                        if isinstance(r.get("date"), (datetime.date, datetime.datetime))})
-                    if date_vals:
-                        con.execute(f"DELETE FROM {tbl} WHERE date IN ({','.join('?' * len(date_vals))})",
-                                    date_vals)
+                try:
+                    _ensure_table(con, tbl, colmap)
+                    cols = list(rows[0].keys())
+                    rows = _adapt_date_types(con, tbl, rows, cols)
+                    cols_sql = ",".join('"%s"' % c for c in cols)
+                    ph = ",".join('?' * len(cols))
+                    if _has_pk(con, tbl):
+                        con.executemany(
+                            f"INSERT OR REPLACE INTO {tbl} ({cols_sql}) VALUES ({ph})",
+                            [tuple(r[c] for c in cols) for r in rows])
                     else:
-                        con.execute(f"DELETE FROM {tbl}")
-                    con.executemany(
-                        f"INSERT INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
-                        [tuple(r[c] for c in cols) for r in rows])
+                        _delete_for_rows(con, tbl, rows, cols)
+                        con.executemany(
+                            f"INSERT INTO {tbl} ({cols_sql}) VALUES ({ph})",
+                            [tuple(r[c] for c in cols) for r in rows])
+                except Exception as e:
+                    print(f"  ❌ {tbl} 写入失败: {type(e).__name__}: {e}")
+                    print(f"     首行: {rows[0] if rows else None}")
+                    raise
         if file_imported_any and file_fully_recognized:
             removable.append(f)
     if unknown and not dry_run:
@@ -590,7 +671,14 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, c
         con.commit()
 
     qc = qc_assertions(con)
-    verify_ok, verify_detail = verify_online(con) if (verify and not dry_run) else (True, "跳过线上验证")
+    if verify and not dry_run:
+        try:
+            verify_ok, verify_detail = verify_online(con)
+        except Exception as e:
+            print(f"  ⚠️ 线上验证网络失败，跳过（数据已入库）: {type(e).__name__}: {e}")
+            verify_ok, verify_detail = True, f"网络跳过: {e}"
+    else:
+        verify_ok, verify_detail = True, "跳过线上验证"
 
     removed = 0
     if not dry_run and verify_ok and qc_all_pass(qc):
@@ -700,7 +788,8 @@ if __name__ == "__main__":
             if i + 1 < len(a):
                 only = set(a[i + 1].split(","))
         result = sync(DL, DB, dry_run="--dry-run" in a, keep_source="--keep-source" in a,
-                      csv_only="--csv-only" in a, only_tables=only)
+                      csv_only="--csv-only" in a, only_tables=only,
+                      verify="--no-verify" not in a)
         print(f"导入统计: {result['imported']}")
         print(f"QC 违规: {result['qc']}")
         print(f"线上验证: {result['verify']}")
