@@ -144,8 +144,8 @@ SOURCE_MAP = [
     # 港股通每日成交统计
     (frozenset({"买入成交金额(亿元)","卖出成交金额(亿元)"}), "hk_connect_daily", {
         "交易日期":"date","买入成交金额(亿元)":("buy_amt","亿元"),"卖出成交金额(亿元)":("sell_amt","亿元")}),
-    # 分钟线（通达信板块指数，code 880xxx；period 由 zip 文件名注入）
-    (frozenset({"时间","代码","名称","开盘价","收盘价","最高价","最低价","成交量","成交额","涨幅","振幅"}),
+    # 分钟线（板块指数/指数/个股；指数包无「成交量」列，签名用公共列，成交量作可选映射）
+    (frozenset({"时间","代码","名称","开盘价","收盘价","最高价","最低价","成交额","涨幅","振幅"}),
      "minute_kline", {
          "时间":"dt","代码":"code","名称":"name","开盘价":"open","最高价":"high","最低价":"low","收盘价":"close",
          "成交量":("volume","手"),"成交额":("amount","元"),"涨幅":"pct_chg","振幅":"amplitude"}),
@@ -279,8 +279,19 @@ def qc_all_pass(qc):
     return all(v == 0 for v in qc.values())
 
 
+#: 各表主键（供 INSERT OR REPLACE 判重；无主键的表 duckDB 会直接报错）
+_PK = {
+    "minute_kline": ["code", "dt", "period"],
+    "balance_sheet": ["code", "date", "report_period", "report_type"],
+    "fin_indicator": ["code", "date", "report_period"],
+    "fin_disclosure": ["code", "report_period"],
+    "share_unlock": ["code", "unlock_date", "holder"],
+    "theme_component": ["theme_code", "stock_code", "date"],
+}
+
+
 def _ensure_table(con, tbl, colmap):
-    """表不存在时按 colmap 目标列建表（date→DATE，dt→TIMESTAMP，数值→DOUBLE，其余→VARCHAR）。"""
+    """表不存在时按 colmap 目标列建表，并按 _PK 设主键（INSERT OR REPLACE 判重用）。"""
     exists = con.execute(
         "SELECT count(*) FROM information_schema.tables WHERE table_name=?", [tbl]).fetchone()[0]
     if exists:
@@ -295,7 +306,12 @@ def _ensure_table(con, tbl, colmap):
         cols.append(f'"{name}" {typ}')
     if tbl == "minute_kline":
         cols.append('"period" VARCHAR')
-    con.execute(f'CREATE TABLE "{tbl}" ({", ".join(cols)})')
+    pk = _PK.get(tbl, [])
+    pk_sql = ""
+    if pk:
+        quoted = ", ".join('"%s"' % c for c in pk)
+        pk_sql = f", PRIMARY KEY ({quoted})"
+    con.execute(f'CREATE TABLE "{tbl}" ({", ".join(cols)}{pk_sql})')
 
 
 def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
@@ -328,6 +344,9 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
             if tbl == "minute_kline" and period:
                 for r in rows:
                     r["period"] = period
+            if tbl in _PK:
+                pk_cols = _PK[tbl]
+                rows = [r for r in rows if all(r.get(c) is not None for c in pk_cols)]
             imported[tbl] = imported.get(tbl, 0) + len(rows)
             if dry_run:
                 print(f"  [dry-run] {stream_name} → {tbl}: {len(rows)} 行")
