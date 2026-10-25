@@ -963,6 +963,96 @@ def sync_base_data(base_dir, con, dry_run=False):
     return stats
 
 
+def sync_list_data(base_dir, con, dry_run=False):
+    """同步《A股_榜单数据》目录（按子目录映射表，按日期替换，幂等）。
+
+    增量场景：月度目录下新增当天 csv（如 涨停最强板块/2026-10/涨停最强板块_20261024.csv）。
+    兼容汇总 zip（YYYY-MM至YYYY-MM.zip，内含 月度/日.csv）。
+    """
+    SUB_MAP = {
+        "涨停最强板块": "zt_strong_board",
+        "连板天梯": "ladder",
+        "龙虎榜每日明细": "lhb_daily",
+        "龙虎榜机构明细": "lhb_inst",
+        "题材成分_开盘啦": "theme_stock",
+        "榜单数据_开盘啦/涨停": "zt_pool_limit_up",
+        "榜单数据_开盘啦/自然涨停": "zt_pool_natural_up",
+        "榜单数据_开盘啦/炸板": "zt_pool_broken",
+        "榜单数据_开盘啦/竞价": "zt_pool_auction",
+        "榜单数据_开盘啦/跌停": "zt_pool_limit_down",
+        "涨跌停榜单_同花顺/涨停池": "zt_ths_limit_up",
+        "涨跌停榜单_同花顺/冲刺涨停": "zt_ths_rush",
+        "涨跌停榜单_同花顺/炸板池": "zt_ths_broken",
+        "涨跌停榜单_同花顺/跌停池": "zt_ths_limit_down",
+        "涨跌停榜单_同花顺/连扳池": "zt_ths_ladder_pool",
+        "App热榜_东财": "hot_rank_em",
+        "App热榜_同花顺": "hot_rank_ths",
+    }
+    SRC = {"榜单数据_开盘啦": "开盘啦", "涨跌停榜单_同花顺": "同花顺",
+           "App热榜_东财": "东财", "App热榜_同花顺": "同花顺"}
+    stats = {}
+    for rel, table in SUB_MAP.items():
+        subdir = os.path.join(base_dir, rel)
+        if not os.path.isdir(subdir):
+            continue
+        try:
+            types = {r[0]: r[1] for r in con.execute('DESCRIBE "%s"' % table).fetchall()}
+        except Exception:
+            continue
+        dcol = next((c for c in ("交易日期", "交易时间") if c in types), None)
+        src_val = next((v for k, v in SRC.items() if rel.startswith(k)), None)
+        csvs = []
+        for z in sorted(glob.glob(os.path.join(subdir, "*.zip"))):
+            if os.path.basename(z).startswith("._"):
+                continue
+            with zipfile.ZipFile(z) as zf:
+                for inner in sorted(n for n in zf.namelist() if n.endswith(".csv")):
+                    csvs.append(zf.read(inner).decode("utf-8-sig").splitlines())
+        for d in sorted(glob.glob(os.path.join(subdir, "20*"))):
+            if not os.path.isdir(d):
+                continue
+            for f in sorted(glob.glob(os.path.join(d, "*.csv"))):
+                if os.path.basename(f).startswith("._"):
+                    continue
+                csvs.append(open(f, encoding="utf-8-sig").read().splitlines())
+        total = 0
+        for lines in csvs:
+            if len(lines) < 2:
+                continue
+            hdr = lines[0].split(",")
+            recs = []
+            for ln in lines[1:]:
+                r = dict(zip(hdr, ln.split(",")))
+                rec = {c: r[c] for c in hdr if c in types}
+                if src_val and "src_type" in types:
+                    rec["src_type"] = src_val
+                if rec:
+                    recs.append(rec)
+            if not recs:
+                continue
+            df = pd.DataFrame(recs)
+            for c in df.columns:
+                t = types.get(c)
+                if t == "DATE":
+                    df[c] = pd.to_datetime(df[c], errors="coerce", format="mixed").dt.date
+                elif t in ("DOUBLE", "BIGINT", "HUGEINT") or (t and t.startswith("DECIMAL")):
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            if dry_run:
+                total += len(df)
+                continue
+            con.register("_ld", df)
+            if dcol:
+                con.execute('DELETE FROM "%s" WHERE "%s" IN (SELECT DISTINCT "%s" FROM _ld)' % (table, dcol, dcol))
+            cs = ",".join('"%s"' % c for c in df.columns)
+            con.execute('INSERT INTO "%s" (%s) SELECT %s FROM _ld' % (table, cs, cs))
+            con.unregister("_ld")
+            total += len(df)
+        stats[table] = total
+    if not dry_run:
+        con.commit()
+    return stats
+
+
 if __name__ == "__main__":
     import sys
     DB = os.environ.get("STOCK_DB", "/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb")
@@ -975,6 +1065,12 @@ if __name__ == "__main__":
         con = duckdb.connect(DB)
         stats = sync_base_data(os.path.join(DL, "A股交易基础数据"), con, dry_run="--dry-run" in a)
         print("基础数据导入:", stats)
+        con.close()
+    elif "--list-data" in a:
+        # 用法: --list-data [--dry-run]；同步《A股_榜单数据》目录（增量友好，幂等）
+        con = duckdb.connect(DB, read_only="--dry-run" in a)
+        stats = sync_list_data(os.path.join(DL, "A股_榜单数据"), con, dry_run="--dry-run" in a)
+        print("榜单数据导入:", stats)
         con.close()
     elif "--cleanup" in a:
         # 用法: --cleanup 20261021,20261022 [--apply]
