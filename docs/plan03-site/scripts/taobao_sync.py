@@ -464,6 +464,42 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
             "verify": {"ok": verify_ok, "detail": verify_detail}, "removed": removed}
 
 
+def cleanup_imported(download_dir, db_path, dates, dry_run=True):
+    """验证指定日期的日频数据已在库，然后删除该日期的日频 csv 源文件。
+
+    只删 *.csv（日频），不碰 *.zip（分钟线/财务，可能尚未导入）。
+    """
+    con = duckdb.connect(db_path, read_only=True)
+    removed = []
+    for d in dates:
+        d_fmt = datetime.datetime.strptime(d, "%Y%m%d").strftime("%Y-%m-%d")
+        detail = {}
+        ok = True
+        for tbl in ["daily", "tech_factor_qfq", "limit_price"]:
+            n = con.execute(f"SELECT count(*) FROM {tbl} WHERE date=?", [d_fmt]).fetchone()[0]
+            detail[tbl] = n
+            if n == 0:
+                ok = False
+        status = "✅ 已导入" if ok else "❌ 未完整导入"
+        print(f"  {d}: {status} {detail}")
+        if not ok:
+            print(f"    → 保留源文件（数据缺失，勿删）")
+            continue
+        for f in sorted(glob.glob(os.path.join(download_dir, f"*{d}*.csv"))):
+            if os.path.basename(f).startswith("._"):
+                continue
+            if dry_run:
+                print(f"    [dry-run] 将删除 {os.path.basename(f)}")
+            else:
+                try:
+                    os.remove(f)
+                    removed.append(f)
+                except OSError as e:
+                    print(f"    ⚠️ 删除失败 {os.path.basename(f)}: {e}")
+    con.close()
+    return removed
+
+
 if __name__ == "__main__":
     import sys
     DB = os.environ.get("STOCK_DB", "/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb")
@@ -471,6 +507,16 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if "--qc" in a:
         print("QC:", qc_assertions(duckdb.connect(DB, read_only=True)))
+    elif "--cleanup" in a:
+        # 用法: --cleanup 20261021,20261022 [--apply]
+        i = a.index("--cleanup")
+        dates = a[i + 1].split(",") if i + 1 < len(a) else []
+        apply = "--apply" in a
+        if not dates:
+            print("用法: taobao_sync.py --cleanup 20261021,20261022 [--apply]")
+            sys.exit(1)
+        removed = cleanup_imported(DL, DB, dates, dry_run=not apply)
+        print(f"\n{'已删除' if apply else '（dry-run 预览，加 --apply 才真删）'} {len(removed)} 个日频 csv")
     else:
         result = sync(DL, DB, dry_run="--dry-run" in a, keep_source="--keep-source" in a)
         print(f"导入统计: {result['imported']}")
