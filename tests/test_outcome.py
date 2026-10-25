@@ -85,11 +85,14 @@ def test_net_is_gross_minus_cost():
 def test_blocked_decision_yields_missing_not_zero():
     """封板买不到时，收益必须是缺失，**绝不能是 0**——否则会把"没成交"算成"没赚没亏"。"""
     with Library() as lib:
-        # 在真实库里找一例 T+1 开盘即涨停的标的（主体 hs/bj 行，非残留 sh/sz）
+        # 在真实库里找一例 T+1 开盘即涨停的标的（主体 hs/bj 行，非残留 sh/sz）。
+        # 上限卡在 trade_cal 覆盖内：行情表可能先于交易日历更新（如 daily/limit_price 已到
+        # 10-23 而 trade_cal 只到 10-22），取「最新样本」会落在日历外、判决器取不到 T+1 交易日。
         row = lib._con.execute("""
             SELECT l.code, l.date FROM limit_price l
             JOIN daily d ON d.date = l.date AND d.code = l.code AND d.market = l.market
             WHERE d.open >= l.limit_up AND l.market IN ('hs','bj')
+              AND l.date <= (SELECT max(date) FROM trade_cal)
             ORDER BY l.date DESC LIMIT 1
         """).fetchone()
         if row is None:
