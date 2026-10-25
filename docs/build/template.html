@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>观天 · A股进攻型操盘 Agent 架构方案 v2</title>
+<style>
+  :root{
+    --bg:#0b0e14; --bg2:#121722; --bg3:#1a2130; --line:#242c3d;
+    --fg:#e6ebf5; --fg2:#a7b3c7; --fg3:#6b7a92;
+    --acc:#4f8cff; --acc2:#22d3a6; --warn:#ffb545; --bad:#ff5d6c; --good:#2fd07a;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 26px 90px}
+  header{border-bottom:1px solid var(--line);margin-bottom:34px;padding:42px 0 26px;
+    background:linear-gradient(180deg,rgba(79,140,255,.10),transparent)}
+  h1{font-size:30px;margin:0 0 8px;letter-spacing:.3px}
+  h1 .sub{color:var(--acc);font-weight:600}
+  .meta{color:var(--fg3);font-size:13px;font-family:var(--mono)}
+  h2{font-size:21px;margin:52px 0 16px;padding-left:12px;border-left:3px solid var(--acc)}
+  h3{font-size:16px;margin:30px 0 10px;color:var(--fg)}
+  h4{font-size:14px;margin:20px 0 8px;color:var(--fg2);font-weight:600}
+  p{color:var(--fg2);margin:10px 0}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--bg3);
+    padding:1px 5px;border-radius:4px;color:#9fd0ff;word-break:break-all}
+  pre.code{background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+    padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:12.5px;color:#bcd0e8}
+  a{color:var(--acc)}
+  /* metric tiles */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin:20px 0}
+  .tile{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .tile .k{font-size:11.5px;color:var(--fg3);letter-spacing:.5px}
+  .tile .v{font-size:22px;font-weight:700;font-family:var(--mono);margin:4px 0 2px;color:#fff}
+  .tile .n{font-size:11.5px;color:var(--fg3)}
+  .tile.g .v{color:var(--good)} .tile.w .v{color:var(--warn)} .tile.b .v{color:var(--bad)}
+  /* diagram */
+  .fig{background:var(--bg2);border:1px solid var(--line);border-radius:12px;
+    padding:20px;margin:22px 0;overflow:auto}
+  .fig .cap{font-size:12px;color:var(--fg3);text-align:center;margin-top:12px;
+    border-top:1px dashed var(--line);padding-top:10px}
+  .mermaid{text-align:center}
+  .mermaid svg{max-width:100%;height:auto}   /* 桌面：缩放到正文栏宽，不裁切 */
+  /* table */
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--bg3);color:var(--fg);font-weight:600;font-size:12.5px}
+  td{color:var(--fg2)}
+  tr:nth-child(even) td{background:rgba(255,255,255,.014)}
+  /* callout */
+  .box{border-radius:10px;padding:14px 18px;margin:18px 0;border:1px solid var(--line);
+    background:var(--bg2);border-left-width:3px}
+  .box.bad{border-left-color:var(--bad)} .box.warn{border-left-color:var(--warn)}
+  .box.ok{border-left-color:var(--good)} .box.info{border-left-color:var(--acc)}
+  .box .t{font-weight:700;font-size:13.5px;margin-bottom:6px;color:#fff}
+  .box p:last-child{margin-bottom:0}
+  .pill{display:inline-block;font-size:11px;padding:1.5px 8px;border-radius:20px;
+    font-family:var(--mono);border:1px solid var(--line);color:var(--fg2);background:var(--bg3)}
+  .pill.ok{color:var(--good);border-color:rgba(47,208,122,.35)}
+  .pill.no{color:var(--bad);border-color:rgba(255,93,108,.35)}
+  .pill.wr{color:var(--warn);border-color:rgba(255,181,69,.35)}
+  ul{color:var(--fg2);padding-left:22px} li{margin:5px 0}
+  .toc{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:16px 22px}
+  .toc ol{color:var(--fg2);margin:6px 0;padding-left:22px;columns:2;column-gap:34px}
+  .toc a{text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  hr{border:0;border-top:1px solid var(--line);margin:38px 0}
+  .small{font-size:12.5px;color:var(--fg3)}
+
+  /* ---- 手机窄屏适配 ---- */
+  @media (max-width:700px){
+    html,body{overflow-x:hidden;max-width:100%}
+    body{font-size:14.5px;line-height:1.7}
+    .wrap{max-width:100%;padding:0 13px 56px}
+    header{padding:26px 0 18px;margin-bottom:22px;max-width:100%}
+    h1{font-size:21px;line-height:1.35}
+    h1 .sub{display:block;font-size:16px;margin-top:4px}
+    .meta{font-size:11.5px}
+    h2{font-size:17.5px;margin:34px 0 12px}
+    h3{font-size:15px;margin:22px 0 8px}
+    h4{font-size:13.5px}
+    code{font-size:11.5px}
+    .toc{padding:13px 15px}
+    .toc ol{columns:1;padding-left:19px}
+    /* 指标卡两列 */
+    .tiles{grid-template-columns:repeat(2,1fr);gap:9px}
+    .tile{padding:11px 12px}
+    .tile .v{font-size:18px}
+    .tile .k,.tile .n{font-size:10.5px}
+    /* 表格改为可横向滑动，避免文字被挤成一列一列 */
+    table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;
+          max-width:100%;font-size:12.5px;white-space:normal}
+    th,td{padding:7px 8px;min-width:92px}
+    /* 图：不缩成糊，改为横向滑动，保持可读 */
+    .fig{padding:11px 9px;border-radius:10px;max-width:100%;overflow-x:auto}
+    .mermaid{overflow-x:auto;-webkit-overflow-scrolling:touch;text-align:left}
+    .mermaid svg{min-width:620px;max-width:none!important;height:auto}
+    .fig .cap{font-size:11px;text-align:left}
+    pre.code{font-size:11px;padding:10px 11px;max-width:100%;overflow-x:auto}
+    .box{padding:11px 13px;max-width:100%}
+    .box .t{font-size:12.5px}
+    ul{padding-left:19px}
+    p,.meta,h1,h2,h3,h4{overflow-wrap:anywhere}
+  }
+  @media (max-width:420px){
+    .tiles{grid-template-columns:1fr}
+    .mermaid svg{min-width:560px}
+  }
+  /* ---- 打印：把图缩回页宽，避免撑页 ---- */
+  @media print{
+    html,body{overflow-x:visible}
+    .wrap{max-width:100%}
+    .fig{overflow:visible}
+    .mermaid{overflow:visible}
+    .mermaid svg{max-width:100%!important;height:auto!important;min-width:0!important}
+    table{display:table;overflow:visible}
+    th,td{min-width:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>观天 · A股进攻型操盘 Agent <span class="sub">架构方案 v2</span></h1>
+  <div class="meta">2026-10-12 · 状态：待确认，未实施 · 全文结论均来自本机实测，未核验项单独标注</div>
+</header>
+
+<div class="toc">
+  <b style="font-size:13px">目录</b>
+  <ol>
+    <li><a href="#s1">核心结论</a></li>
+    <li><a href="#s2">现状实证（资产盘点）</a></li>
+    <li><a href="#s3">总体架构</a></li>
+    <li><a href="#s4">知识层重建（只看 2238 张卡）</a></li>
+    <li><a href="#s5">数据层与闸门</a></li>
+    <li><a href="#s6">判断层：概率与权重</a></li>
+    <li><a href="#s7">执行层与基座裁决</a></li>
+    <li><a href="#s8">复盘进化闭环</a></li>
+    <li><a href="#s9">插件选型：替代本地不成熟的东西</a></li>
+    <li><a href="#s10">环境与依赖现状</a></li>
+    <li><a href="#s11">目录结构</a></li>
+    <li><a href="#s12">里程碑</a></li>
+    <li><a href="#s13">明确不做</a></li>
+    <li><a href="#s14">风险与待确认决策</a></li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1 · 核心结论</h2>
+
+<div class="tiles">
+  <div class="tile"><div class="k">主库规模</div><div class="v">133.6<span style="font-size:13px">GB</span></div><div class="n">81 基表 + 48 视图 · 只读</div></div>
+  <div class="tile"><div class="k">分钟线行数</div><div class="v">54.7<span style="font-size:13px">亿</span></div><div class="n">2000-06-09 → 2026-10-09</div></div>
+  <div class="tile g"><div class="k">引擎测试</div><div class="v">101/101</div><div class="n">qbt 全通过（实跑）</div></div>
+  <div class="tile g"><div class="k">知识卡总量</div><div class="v">2238</div><div class="n">100% 有来源行</div></div>
+  <div class="tile w"><div class="k">可审计卡片</div><div class="v">89.4<span style="font-size:13px">%</span></div><div class="n">2000 张 = 真书 + 章/页</div></div>
+  <div class="tile b"><div class="k">不可审计</div><div class="v">577</div><div class="n">最大两本书无正文</div></div>
+  <div class="tile b"><div class="k">编程盘风险</div><div class="v">0</div><div class="n">alphadesk git 提交数</div></div>
+  <div class="tile g"><div class="k">书籍原件</div><div class="v">17/17</div><div class="n">外盘全部找到</div></div>
+</div>
+
+<div class="box info">
+  <div class="t">一句话方案</div>
+  <p>把「判断」与「正确性」物理切开：<b>LLM 只产出概率化、证据化、可审计的决策卡</b>；正确性由引擎的物理闸门保证；<b>知识只从 2238 张书源卡取，A股落地层由我们自己从数据库实测生成</b>，不再继承任何 autoclaw 的总结；<b>复盘是一条产出「变更提案 → 历史回放验证 → 自动回滚」的工程流水线</b>。</p>
+</div>
+
+<div class="box bad">
+  <div class="t">🔴 立刻要处置的一件事</div>
+  <p><code>~/Documents/code/alphadesk/</code> —— 190 个 py / <b>47,215 行</b> / <b>757 个用例实测 <b>749 通过</b></b> / 38 份验收文档，是全机最完整的 Agent 工程，但 <code>git log</code> 返回 <code>fatal: does not have any commits yet</code>，18 项未跟踪。<b>零版本保护，一次误写不可回滚。</b></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2 · 现状实证（资产盘点）</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  subgraph DATA["数据底座 · 只读"]
+    DB["PSSD taobao_minute.duckdb<br/>133.6 GB · 81 基表<br/>分钟 54.7 亿行"]
+    NEWS["news.db<br/>4,567 条 · 09-10→10-12<br/>东财 3892 / 新浪 675"]
+    TRD["trading.db<br/>持仓权威源 · 仅只读<br/>holdings 38 / broker_trades"]
+  end
+  subgraph KNOW["知识层"]
+    CARDS["2238 张知识点卡<br/>89.4% 可追溯到真书页码"]
+    BOOKS["17 本书原件<br/>/Volumes/My PSSD/downlodData/books/"]
+  end
+  subgraph CODE["代码资产"]
+    QBT["qbt 引擎<br/>101/101 测试 · 数据层冻结"]
+    AD["alphadesk<br/>47,215 行 · 749/757 通过<br/>⚠ git 零提交"]
+    OTHER["TradingAgents-astock / vibe-astock<br/>a-stock-data"]
+  end
+  BOOKS -->|挖掘| CARDS
+  DB --> QBT
+  CARDS -.引用.-> AD
+  OTHER -.数据源与指标参考.-> DB
+</pre>
+  <div class="cap">图 1 · 四类资产的真实关系（虚线 = 只读引用，实线 = 数据流向）</div>
+</div>
+
+<h3>2.1 数据底座（实测）</h3>
+<table>
+<tr><th>项</th><th>实测值</th></tr>
+<tr><td>主库</td><td><code>/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb</code></td></tr>
+<tr><td>表/视图</td><td><code>information_schema</code> 82（基表 81 + 视图 1）；<code>duckdb_tables()</code> 81；<code>duckdb_views()</code> 48；<code>bak_*</code> 9</td></tr>
+<tr><td>历史深度</td><td><code>minute_1min</code> 5,473,302,862 行（2000-06-09→2026-10-09）｜<code>zt_pool_limit_up</code> 145,416（2018-01-02→）｜<code>lhb_daily</code> 264,650（2005-01-19→2026-10-12）</td></tr>
+<tr><td>性能</td><td>全市场单日分钟 <b>163 万行 / 0.4 秒</b>；单票单日 241 根 / 0.11 秒；日线两年聚合 0.03 秒</td></tr>
+<tr><td>已断数据</td><td><code>hk_connect_net</code> 止于 <b>2024-08-16</b>（北向资金）→ 不可作依据</td></tr>
+<tr><td>浅历史</td><td><code>daily_basic</code> 仅 2025-08-19 起｜<code>st_stock</code> 仅近 1 个月</td></tr>
+</table>
+
+<h3>2.2 用真数据跑通的原型（2026-10-09）</h3>
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  A["情绪温度计"] --> A1["涨停 69 家<br/>最高 9 连板<br/>上涨 3294 / 下跌 2146<br/>成交额 19,167 亿"]
+  B["赚钱效应分层<br/>昨涨停→今表现"] --> B1["首板 +2.23% (n=34)<br/>2连板 −3.82% (n=3)<br/>4连板 +10.02% (n=2)"]
+  C["板块资金迁移<br/>T-1 → T 排名"] --> C1["动力电池回收 115→3<br/>福建板块 835→6<br/>黄金概念 733→7"]
+  D["题材主线识别<br/>涨停原因聚类"] --> D1["电池 6 · 软件开发 5<br/>出版 5 · 零售 4"]
+</pre>
+  <div class="cap">图 2 · 四类核心感知量均已用真数据验证可算（注：2 连板仅 3 个样本 → 决策必须带样本数门槛）</div>
+</div>
+
+<h3>2.3 必须防住的数据陷阱（每条都实测复现过）</h3>
+<table>
+<tr><th>#</th><th>陷阱</th><th>实测证据</th><th>后果</th></tr>
+<tr><td>T1</td><td><b>缺失 ≠ 0</b></td><td><code>zt_pool_broken</code> 在 10-09 无任何行</td><td>当 0 处理 → "炸板率 0%、跌停 0" → 误判情绪极好</td></tr>
+<tr><td>T2</td><td><b>静默返回空</b></td><td>用 <code>code='000001.SH'</code> 查 <code>index_daily</code> 返回 <code>[]</code> 且不报错，实际口径是 <code>sh000001</code></td><td>不报错、结果全错</td></tr>
+<tr><td>T3</td><td>代码口径 3 套</td><td>前缀式 / 后缀式 / 裸 6 位，且 <code>minute_1min</code> 内部不统一</td><td>裸码 <code>000001</code> 撞上证指数</td></tr>
+<tr><td>T4</td><td>日期格式 4 种</td><td>BIGINT / VARCHAR 两种 / DATE</td><td>跨表对齐错位</td></tr>
+<tr><td>T5</td><td>金额单位 4 种</td><td>元 / 万元 / 亿元 / 千元</td><td>差 10000 倍</td></tr>
+<tr><td>T6</td><td>数值存成 VARCHAR</td><td><code>industry_flow_ths</code> 12 列全 VARCHAR</td><td>字符串序：'9' &gt; '10'</td></tr>
+<tr><td>T7</td><td>列名含 <code>%</code> <code>()</code></td><td><code>"主力净流入净额(元)"</code> 不加引号即 Parser Error</td><td>脚本直接崩</td></tr>
+<tr><td>T8</td><td>口径分叉</td><td>涨停家数：东财 69 vs 同花顺 72</td><td>指标不可混用</td></tr>
+<tr><td>T9</td><td>元数据自身失真</td><td><code>table_meta.updated_at</code> 全停在 10-09；<code>tech_factor_qfq</code> 记 1008 实测 1009</td><td>用它当新鲜度真源 → 判错</td></tr>
+<tr><td>T10</td><td>跨表不一致</td><td>10-12：<code>lhb_daily</code> 有 83 行，而 <code>daily</code>/<code>minute</code>/<code>limit_price</code> 均 0 行</td><td>"今天有哪些数据可用"必须实测</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s3">3 · 总体架构</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  classDef data fill:#1a2130,stroke:#242c3d,color:#a7b3c7
+  classDef gate fill:#2a1f14,stroke:#ffb545,color:#ffd9a0
+  classDef know fill:#141f2a,stroke:#4f8cff,color:#a9cdff
+  classDef judge fill:#1a1430,stroke:#8b5cf6,color:#cbb8ff
+  classDef exec fill:#0f2418,stroke:#2fd07a,color:#a8ecc4
+  classDef rev fill:#2a1420,stroke:#ff5d6c,color:#ffb3ba
+
+  L0["L0 数据底座<br/>PSSD duckdb · 只读<br/>在线源物理隔离"]:::data
+  L1["L1 数据闸门<br/>DuckGuard：新鲜度 / schema / drift / 契约 / 逐行错误"]:::gate
+  L2["L2 知识层<br/>2238 书源卡 → 三级信任 → 索引<br/>引用必须 path#line"]:::know
+  L3["L3 事实感知<br/>六类 Context：大势 / 情绪 / 资金 / 题材 / 龙虎榜 / 个股"]:::know
+  L4["L4 判断层<br/>证据卡 → 概率情景 → 加权 → 决策卡"]:::judge
+  L5["L5 执行层<br/>RiskChain → 撮合 → 账本<br/>agent 无特权路径"]:::exec
+  L6["L6 复盘进化<br/>冻结 → 归因 → CP 卡 → 四重门 → 回滚"]:::rev
+
+  L0 --> L1 --> L3
+  L2 --> L3
+  L3 --> L4 --> L5 --> L6
+  L6 -.参数与规则升级.-> L4
+  L6 -.核对口径.-> L1
+  L5 -.计划 vs 实际.-> L6
+</pre>
+  <div class="cap">图 3 · 总体架构：单向数据流 + 一条进化回路（虚线即闭环，且只能升级参数/规则，不能绕过 L5 的执行闸门）</div>
+</div>
+
+<div class="box info">
+  <div class="t">不可协商的六条约束</div>
+  <table style="margin:8px 0 0">
+  <tr><th>#</th><th>约束</th><th>落地方式（不是文档口号）</th></tr>
+  <tr><td>A1</td><td>判断与正确性分离</td><td>决策卡只能变成 <code>SignalProvider</code>，没有直接下单路径</td></tr>
+  <tr><td>A2</td><td>确定性可复现</td><td>一切 LLM / 网络调用录制进 run，回放时不重调</td></tr>
+  <tr><td>A3</td><td>结构性无未来函数</td><td>决策带 <code>cutoff</code>，只读 as-of 快照</td></tr>
+  <tr><td>A4</td><td>数据不过闸门不进决策</td><td>未核验字段标 <code>UNVERIFIED</code>，权重强制 0</td></tr>
+  <tr><td>A5</td><td>缺失 ≠ 0，缺失 ≠ 卖出</td><td>实测陷阱 T1 铁证</td></tr>
+  <tr><td>A6</td><td>失败即停</td><td>数据缺口日 fail-closed，不降级跑</td></tr>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4 · 知识层重建（只看 2238 张卡）</h2>
+
+<div class="box warn">
+  <div class="t">处置原则（按你的要求重做）</div>
+  <p><b>只认 2238 张知识点卡</b>——它们是 17 本 PDF 书籍的挖掘产物，我实测抽查 85 张：<b>60 张完全忠实原文、0 张编造、1 张部分加戏</b>；295 张「真书 + 具体页码」卡中 <b>58.3% 引用页与内容最佳匹配页完全一致，85% 在 ±5 页内</b>。书源层可信，<b>不整体废弃</b>。</p>
+  <p><b>autoclaw 生成的工作流层整体丢弃</b>（见 §4.3），并在卡片内部<b>按部件精确剥离</b>它注入的内容，而不是推翻整库。</p>
+</div>
+
+<h3>4.1 知识重建管道</h3>
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  B0["17 本书原件<br/>外盘 books/<br/>17/17 已找到"]
+  B1["文字层优<br/>9 本"]
+  B2["矢量但字形被替换<br/>2 本"]
+  B3["纯扫描<br/>6 本"]
+  B4["已挖完未回填<br/>6 本"]
+  OCR["macOS Vision OCR<br/>已实测，中文还原优秀"]
+  EX["books_extract/<br/>全文 md + 富要点 24-36KB<br/>+ 85 张卡已入库"]
+  MINE["受控重新挖掘"]
+  TIER["三级信任分级"]
+  STRIP["剥离 autoclaw 注入层"]
+  LAND["A股落地层重新生成<br/>由 duckdb 实测，非模型发挥"]
+  IDX["knowledge_index.jsonl<br/>可引用 / 可校验 / 可回滚"]
+
+  B0 --> B1 --> MINE
+  B0 --> B2 --> OCR --> MINE
+  B0 --> B3 --> OCR --> MINE
+  B0 --> B4 --> EX --> MINE
+  MINE --> TIER --> STRIP --> LAND --> IDX
+</pre>
+  <div class="cap">图 4 · 关键判断：<b>大部分书不需要重新 OCR</b> —— 6 本「空壳」其实早在 <code>.openclaw/tmp/books_extract/</code> 挖完（85 张卡已入库），只差回填</div>
+</div>
+
+<h3>4.2 三级信任分级（决策时的可用性）</h3>
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  ALL["2238 张卡<br/>100% 有来源行"]
+  ALL --> T1["T1 可审计 · 2000 张（89.4%）<br/>真书 + 章/页定位<br/>✅ 决策可用"]
+  ALL --> T2["T2 待补正文 · 577 张（25.8%）<br/>TSM 355 · AFML 139<br/>主动投资组合 20 · 数学货管 17<br/>短线交易秘诀 20 · 量化投资 26<br/>⚠ 补正文后升 T1，否则不得单独定性"]
+  ALL --> T3["T3 剔除 · 45 张<br/>28 张 [[本地策略体系]] 自产<br/>17 张纯软件工程卡"]
+  ALL --> T4["T4 质量待修<br/>59 张重复（冗余约 29）<br/>640 张用空占位页当来源<br/>27 张占位符页码 · 8 种引用格式"]
+  T1 --> SEED["干净种子 1649 张（73.7%）<br/>= 有引文 且 无 autoclaw 注入"]
+</pre>
+  <div class="cap">图 5 · 信任分级。<b>最大风险是 T2</b>：引用量第一的《Trading Systems and Methods》(355 张) 与 AFML (139 张) 在书库里只有 540B / 583B 的空骨架页，页码无从证实也无从证伪</div>
+</div>
+
+<h3>4.3 剥离清单：autoclaw 注入层精确定位（不必推翻整库）</h3>
+<table>
+<tr><th>部件</th><th>规模</th><th>处理</th></tr>
+<tr><td><b>工作流层整层</b>：17 张「XX工作流总纲」、8 份「作战手册-0X」、8 份「诉求-0X」、4 个「体系」文件、<code>00-*</code> 索引</td><td>约 40 个文件</td><td><span class="pill no">整类剔除</span> 不进知识层、不进决策</td></tr>
+<tr><td><code>## A股落地</code> 段落（书外补充层）</td><td>2128 张含此段；1155 张是 A 股制度套话；<b>173 张</b>掺入 <code>advice_gate / winrate_audit / ⑤edge / 闸门四查</code></td><td><span class="pill wr">删段保留卡</span> 落地层由我们自己重算</td></tr>
+<tr><td><code>&lt;!-- AUTO-LINKED-START --&gt;</code> 自动归属块 + <code>✓人工/⚠️反用/分≥6</code></td><td>17 张（2026-10-05 批次）</td><td><span class="pill no">删除该块</span></td></tr>
+<tr><td>来源写 <code>[[本地策略体系]]</code>（100% 自产，引用 <code>TOOLS.md</code>、<code>advice_emit.py</code>、<code>armed_orders.py</code>）</td><td>28 张</td><td><span class="pill no">整卡剔除</span></td></tr>
+<tr><td>含 autoclaw 专有工具名</td><td>130 张（advice_gate 60 / winrate_audit 42 / ⑤edge 21）</td><td><span class="pill wr">清洗引用后保留</span></td></tr>
+<tr><td>《知识库量化验证体系-30信号权重》</td><td>1 份 + 738 万事件回测</td><td><span class="pill wr">降级为线索</span> <b>必须重跑</b>：其底层回测被自查出含未来函数（收益虚高 +34% → 修复后 −2.78%）与"涨停价可成交"假设错误</td></tr>
+<tr><td>《实战纪律手册》D1–D17</td><td>1 份 / 17 KB</td><td><span class="pill wr">降级为线索</span> 其中的实证数字需用主库复算后才可用</td></tr>
+<tr><td>《AI决策错误全量明细清单》151 条</td><td>1 份 / 39.5 KB</td><td><span class="pill ok">保留</span> 但定位是<b>缺陷回归清单</b>（不是知识），用于 §8 的门 3</td></tr>
+</table>
+
+<div class="box ok">
+  <div class="t">✅ 这样切之后，知识层的分工变得干净</div>
+  <p><b>书源知识</b>（2238 卡，T1/T2 分级，可回溯到书页原文） → 提供"什么形态/什么纪律在理论上成立"；<br>
+  <b>A股落地层</b>（我们自己的 DuckDB 实测，可复现、可消融） → 回答"这个形态在 A 股到底赚不赚钱、赢率多少、样本够不够"。<br>
+  两者物理分开，<b>前者不可被后者改写，后者不可引用前者的结论当证据</b>。</p>
+</div>
+
+<h3>4.4 卡片的新分类（不用 autoclaw 的诉求分类）</h3>
+<p>按标题关键词 + 正文计分重新归类，<b>允许交叠</b>，得 31 类。Top 类：</p>
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  C1["止损风控<br/>206 张"]
+  C2["突破买点<br/>174 张"]
+  C3["大盘择时<br/>135 张"]
+  C4["交易心理<br/>132 张"]
+  C5["系统评估<br/>117 张"]
+  C6["其余 26 类<br/>…"]
+</pre>
+  <div class="cap">图 6 · 诚实局限：<b>549 张（24.5%）标题无类别关键词</b>（多为英文指标名如 ARIMA / Tubbs / Keltner），主类靠正文判定、精度较低 → 检索时以 <code>category_labels</code> 多标签为准，不单靠主类</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5 · 数据层与闸门</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  Q["查询请求<br/>表 + 字段 + as-of"]
+  subgraph GATE["DuckGuard 六道校验（任一不过 → UNVERIFIED，权重强制 0）"]
+    direction TB
+    G1["① 表白名单<br/>bak_* 一律拒绝"]
+    G2["② 新鲜度<br/>运行时实测 max(日期列)<br/>禁用 table_meta（已失真）"]
+    G3["③ 存在性<br/>行数 0 → MISSING<br/>绝不转 0"]
+    G4["④ 非空返回<br/>口径未命中即报错"]
+    G5["⑤ 类型与单位归一<br/>4 种日期 → date<br/>4 种金额 → 元"]
+    G6["⑥ 口径锁定<br/>同指标只认一个源"]
+  end
+  OUT["gate.json<br/>逐字段可审计"]
+  DOWN["下游只接受 Field 值类型<br/>不接触 SQL 字符串"]
+  Q --> G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> OUT --> DOWN
+</pre>
+  <div class="cap">图 7 · 数据闸门。用 <b>DuckGuard 3.2.0</b> 落地（DuckDB 原生、pytest 风格断言、自带 freshness/schema/drift/契约/逐行错误定位）</div>
+</div>
+
+<div class="box warn">
+  <div class="t">「可用数据日」而非「自然日」</div>
+  <p>实测 2026-10-12：<code>lhb_daily</code> 有数据，而 <code>daily</code>/<code>minute_1min</code>/<code>limit_price</code>/<code>moneyflow_stock</code> 全为 0 行，<code>trade_cal</code> 还没有 10-12 的记录。<br>
+  → 当天<b>只能</b>出龙虎榜维度的结论，禁止出量价/资金面结论。<b>决策按实测有数据的交易日推进，不按日历。</b></p>
+</div>
+
+<h3>5.1 六类 Context Builder</h3>
+<table>
+<tr><th>Context</th><th>数据源</th><th>核心量</th></tr>
+<tr><td>大势 regime</td><td><code>index_daily</code> <code>daily</code> <code>market_flow_daily</code> <code>macro_*</code></td><td>指数多周期位置/量能、涨跌家数、主力净额、利率货币</td></tr>
+<tr><td>情绪 sentiment</td><td><code>zt_pool_limit_up/broken/limit_down</code> <code>ladder</code> <code>zt_strong_board</code> <code>hot_rank_*</code></td><td>涨停/跌停/炸板家数、连板高度与梯队、<b>昨涨停今溢价分层</b>、热度榜</td></tr>
+<tr><td>资金流 flow</td><td><code>board_flow_em</code>(1032 板块/日) <code>stock_flow_em</code> <code>moneyflow_stock</code></td><td>板块净额 + <b>排名迁移(T-1→T)</b>、板块内资金一致性、四单结构</td></tr>
+<tr><td>题材 theme</td><td><code>theme_stock</code> <code>zt_pool</code> 涨停原因 <code>hot_rank</code> 标签</td><td>题材成分、涨停原因聚类、人气值变化</td></tr>
+<tr><td>龙虎榜 lhb</td><td><code>lhb_daily</code> <code>lhb_inst</code></td><td>净买额、机构/游资席位、上榜理由归一化（实测 221 种）</td></tr>
+<tr><td>个股 candidate</td><td><code>minute_1min</code> <code>daily</code> <code>tech_factor_qfq/hfq</code> <code>limit_price</code> <code>suspension</code> <code>stock_info</code></td><td>量价、复权、可交易性、2N/ATR 风险单位</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s6">6 · 判断层：概率与权重</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  E["证据卡<br/>evidence_id · 来源表 · as_of<br/>数值 · 单位 · 闸门状态"]
+  E --> V{"机械校验<br/>id 是否存在？<br/>闸门是否 PASSED？"}
+  V -->|否| REJ["❌ 拒绝产出决策卡"]
+  V -->|是| S["概率情景<br/>2-4 个互斥情景<br/>Σp ≈ 1 · 盈亏比 R<br/>期望值 E = p·R − (1−p)"]
+  S --> W["分项加权<br/>大势 + 情绪 + 资金 + 题材<br/>+ 个股 + 消息 + 信号库<br/>− 风险折扣"]
+  W --> T{"门槛三查<br/>期望值过线<br/>胜率过线<br/>独立日 30 以上<br/>超额 0.30% 以上"}
+  T -->|不过| NOACT["不动作<br/>（合法且被鼓励的输出）"]
+  T -->|过| CARD["决策卡<br/>五段 + 反面证据 + 杀死理由 3 条"]
+</pre>
+  <div class="cap">图 8 · 判断流水线。「独立日 ≥ 30」这条门槛直接用实测教训：2 连板当天只有 3 个样本，不能当规律</div>
+</div>
+
+<div class="box ok">
+  <div class="t">决策 #3：任何单一证据（无论正反）都没有否决权</div>
+  <p>落地方式是<b>物理的</b>：证据卡的 schema 里<b>根本没有 <code>veto</code> 字段</b>，模型在结构上就表达不出"因为一个风险点，否决所有买入"。反面证据只进入 <code>risk_discount = f(数量, 加权强度)</code>，影响总分与仓位上限。</p>
+  <p>唯一的硬否决来自引擎 <code>RiskChain</code>（可交易性 / 整手 / T+1 / 资金 / 涨跌停 / 停牌 / 限额 / 熔断）——那<b>是物理约束，不是观点</b>。</p>
+  <p class="small">依据：autoclaw 自查的 <code>E-1</code> 记录「用与资金形态无关的指标否决资金验证通过的机会」重复 ≥6 次，最严重一天 6 次（9/11 亨通 / 山东玻纤 / 中兵红箭），事后山东玻纤 +4.05%、亨通 +1.02%。</p>
+</div>
+
+<h3>6.1 决策卡必填字段</h3>
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  D["决策卡（五段，顺序不可变）"]
+  D --> D1["① 动作：买/卖/持有/观察 + 数量<br/>含最小申报单位校验（科创板 200 股）"]
+  D --> D2["② 依据：≥3 条<br/>每条带 evidence_id + as_of<br/>标注 已验证/推断/未证实"]
+  D --> D3["③ 执行参数：价位区间 · 时间窗口 · 条件单"]
+  D --> D4["④ 失效条件：必须可观测（价格/资金/时间）"]
+  D --> D5["⑤ 风险与仓位：变动后仓位 · 集中度 · 单票上限 15%"]
+  D --> DX["本方案额外强制<br/>· 1/3/5/10/20 日五档方向概率<br/>· 反面证据 ≥1 条<br/>· 杀死理由 3 条（写不出 = 拦截）<br/>· 计划 vs 实际（由引擎回写）"]
+</pre>
+  <div class="cap">图 9 · 「计划 vs 实际」不是可选字段——它是复盘的核心输入，没有它归因就是猜</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7 · 执行层与基座裁决</h2>
+
+<div class="box bad">
+  <div class="t">⚠ 本方案唯一的重大未决问题</div>
+  <p>同一个目标现在有<b>三代实现</b>，且都没有被正式选为基座。这必须先裁决，否则实施会分裂。</p>
+</div>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  Q{"基座怎么选？"}
+  Q --> A["A · qbt 做执行引擎<br/>+ alphadesk 做判断/工具层复用"]
+  Q --> B["B · 全量押 alphadesk<br/>+ 移植 qbt 三项"]
+  Q --> C["C · 只押 qbt，Agent 层从零写"]
+  A --> A1["优点：各取所长<br/>qbt 有逐位可复现与物理闸门<br/>alphadesk 有现成 Agent 栈"]
+  B --> B1["优点：一条链路<br/>测试数是 qbt 的 7 倍<br/>代价：放弃 qbt 冻结的数据层契约<br/>且须先解决 regime 层样本外 −40.97pp"]
+  C --> C1["代价：重复造轮子<br/>alphadesk 47k 行闲置"]
+</pre>
+  <div class="cap">图 10 · 我推荐 A，但<b>要用实测对照来定，不用文档来定</b>（M-1 任务）</div>
+</div>
+
+<div class="box ok">
+  <div class="t">✅ 基座之一的实测判决：alphadesk 不是空壳（2026-10-12 实跑）</div>
+  <p><b>757 个用例（parametrize 展开后）→ 749 通过、8 失败。</b>过程本身有一次必须记录的自我更正：
+  首次在我的受限沙箱下跑，失败 17 项；其中 <b>9 项是沙箱拦截写入造成的假故障</b>（如 <code>state/trace.jsonl</code> 的 <code>PermissionError</code>、<code>trading.db</code> 的 <code>unable to open database file</code>）。
+  给足权限重跑，这 9 项全部通过。</p>
+  <p><b>剩余 8 项失败的根因分类：</b></p>
+  <ul>
+    <li><b>7 项 = 测试保质期问题，非代码缺陷。</b>断言把 <b>2026-09-24 的实盘快照写死</b>了：
+      <code>latest_trade_date() == 2026-09-24</code>（现实已是 10-12）、<code>holdings == 31 行</code>（现实 40 行）、
+      <code>长飞光纤 qty == 500</code>（现实 100）、<code>10/10 张表陈旧</code>（现实 3 张）。</li>
+    <li><b>1 项 = 真实分歧</b>：<code>test_sql_matches_pandas_real_db</code> —— panel 的 SQL 快路径遇到重复 <code>(code,date)</code> 键时回退 pandas，与 pandas 结果不一致，值得单独查。</li>
+  </ul>
+  <p><b>结论：alphadesk 可作为「参考实现」复用其契约、工具定义与验证方法论</b>（尤其它"对着真库做集成测试"的意图是对的，只是把值写死了）；
+  但它的能力数字<b>必须自己复跑</b>，不能引用文档自述——文档里同时存在 738 与 672 两个数字，而实测收集数是 <b>757</b>、静态函数数是 <b>658</b>。</p>
+  <p class="small">⚠️ 更正记录：我此前把 <code>trading.db</code> 打开失败诊断为「WAL 模式 + 所在目录不可写」，<b>该结论是错的</b>——那是我的沙箱在拦写操作，不是操作系统权限问题。给足权限后 alphadesk 的持仓链路测试全部通过。</p>
+</div>
+
+<table>
+<tr><th>基座</th><th>强项（实测）</th><th>弱项（实测）</th></tr>
+<tr><td><b>qbt</b></td><td>数据层冻结有文档；<code>AsOfView</code> 结构性防未来；<code>RiskChain</code> 物理闸门；<b>逐位可复现</b>（verify 18 指标一致 + 276 次调用全回放）；101/101 测试</td><td>Agent 层空白；白名单缺资金流/涨停/龙虎榜/题材表</td></tr>
+<tr><td><b>alphadesk</b></td><td>Agent 层完整（13 工具 + 建议卡契约 + Critic + 上下文预算守卫 + delivery + ops 审计回放 + golden 54/54）；<b>757 用例实测 749 通过（2026-10-12 实跑）</b></td><td>🔴 git 零提交；<code>regime</code> 层样本外 <b>−40.97pp</b>（其自家建议退回默认关闭）；因子层与 qbt features 重叠</td></tr>
+<tr><td><b>rqalpha 6.4.1</b></td><td>米筐开源，A 股规则（T+1 / 涨跌停）最成熟之一</td><td><b>不替换</b>上两者，而是做<b>独立第二引擎对账</b>——这才是"用成熟件替代不成熟件"的正确姿势</td></tr>
+</table>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  SIG["决策卡"] --> RISK["RiskChain<br/>物理闸门"]
+  RISK --> MATCH["撮合 + 账本"]
+  MATCH --> LEDGER["runs/ 产物<br/>events / equity / metrics"]
+  LEDGER --> X1["qbt verify<br/>逐位一致"]
+  LEDGER --> X2["rqalpha 独立复算<br/>隔离 venv"]
+  X1 --> CMP{"逐列比对<br/>sha256"}
+  X2 --> CMP
+  CMP -->|一致| OK["✅ 引擎可信"]
+  CMP -->|不一致| BAD["🔴 定位差异并修正<br/>（说明有一方在骗你）"]
+</pre>
+  <div class="cap">图 11 · 双引擎对账：不赌"哪个引擎更好"，而是让两个独立实现互相证伪</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8 · 复盘进化闭环</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  F["① 事实冻结 Outcome Freeze<br/>T+1 / +3 / +5 / +20<br/>账本 + 行情 → 实际结果"]
+  F --> F1["铁律：市场已发生的结果<br/>永远不可质疑，只记录不解释<br/>表 append-only"]
+  F1 --> A["② 抓手归因 Attribution"]
+  A --> A1["数据 · 该字段当时是否新鲜<br/>脚本 · 每个 bug 固化一条 fixture<br/>知识 · 引用是否误读原文<br/>判断 · Brier score 校准曲线<br/>权重 · 逐分项消融<br/>执行 · 计划 vs 实际偏差<br/>闭环 · outcome 覆盖率强制 100%"]
+  A1 --> P["③ CP 卡 Change Proposal<br/>假设 → 影响面 → 验证区间<br/>→ 验收指标 → 回滚条件"]
+  P --> G["④ 四重门"]
+  G --> G1["门1 无回归：全量历史不劣化"]
+  G --> G2["门2 目标改善：统计显著<br/>独立日 ≥30 + 置信区间"]
+  G --> G3["门3 无新问题：151 条历史错误回归为空"]
+  G --> G4["门4 样本外：Purged / CPCV / Embargo"]
+  G1 --> R{"四门全过？"}
+  G2 --> R
+  G3 --> R
+  G4 --> R
+  R -->|是| UP["版本 +1<br/>CHANGELOG.md + 证据 run_id"]
+  R -->|否| RB["自动回滚到上一版 manifest hash<br/>写入 FAILED.md<br/>同一假设无新证据禁止再提"]
+  UP --> F
+  RB --> F
+</pre>
+  <div class="cap">图 12 · 复盘进化闭环。门 3 用你自己的 151 条真实错误做回归 —— 这正是"不能改掉新问题、老问题又出来了"的机械化落地</div>
+</div>
+
+<div class="box ok">
+  <div class="t">这条闭环专治 autoclaw 自查出的最大缺陷</div>
+  <p>根因 C：「<b>没有闭环</b>」——实测 <b>31% 的建议无事后追踪</b>（52/166），决策日志 27 条只有 6 条对账（22%）。本方案把 <code>outcome 覆盖率</code> 设为<b>强制 100%</b>，并把每条决策的计划 vs 实际偏差写成结构化字段，而不是靠人记得。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9 · 插件选型：替代本地不成熟的东西</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  subgraph OLD["本地不成熟的东西"]
+    O1["qbt 手写 DataGate"]
+    O2["自实现 CPCV / holdout"]
+    O3["手写 SQL 校验 · 无血缘"]
+    O4["手写版本与回滚"]
+    O5["单一引擎，无人对账"]
+    O6["matplotlib 静态图"]
+    O7["零散取数脚本"]
+    O8["autoclaw pdf-ocr<br/>需代理凭据"]
+  end
+  subgraph NEW["线上成熟替代"]
+    N1["DuckGuard 3.2.0"]
+    N2["purgedcv 0.1.10"]
+    N3["dbt-duckdb"]
+    N4["DVC 3.67.1"]
+    N5["rqalpha 6.4.1（隔离）"]
+    N6["plotly 7.1.0"]
+    N7["akshare/tushare/baostock/mootdx"]
+    N8["macOS Vision OCR（本机免装）"]
+  end
+  O1 --> N1
+  O2 --> N2
+  O3 --> N3
+  O4 --> N4
+  O5 --> N5
+  O6 --> N6
+  O7 --> N7
+  O8 --> N8
+</pre>
+  <div class="cap">图 13 · 替代映射。全部替代件<b>已安装并验收</b>（见 §10）</div>
+</div>
+
+<table>
+<tr><th>插件</th><th>版本</th><th>替代了什么</th><th>为什么选它</th><th>状态</th></tr>
+<tr><td>DuckGuard</td><td>3.2.0</td><td>手写数据闸门</td><td>DuckDB 原生，pytest 风格断言 3 行起；自带 freshness / schema / drift / 契约 / <b>逐行错误定位</b>；官方对比 GE：1 GB CSV <b>4 秒 / 200 MB</b>（GE 45 秒 / 4 GB），依赖 7 个 vs 20+</td><td><span class="pill ok">已装</span></td></tr>
+<tr><td>purgedcv</td><td>0.1.10</td><td>自实现样本外验证</td><td>sklearn 兼容的 purging / embargo / <b>CPCV</b> / Deflated Sharpe — 正好是门 4</td><td><span class="pill ok">已装</span></td></tr>
+<tr><td>dbt-duckdb</td><td>—</td><td>手写 SQL 校验、无血缘</td><td>dbt 的 tests 就是数据闸门，且自带<b>血缘图 + 文档站 + 版本化</b>；2026-09 起 DuckDB 已内置进 dbt v2 (Fusion)</td><td><span class="pill ok">已装</span></td></tr>
+<tr><td>DVC</td><td>3.67.1</td><td>手写版本与回滚</td><td>数据/参数版本化 + <code>dvc exp</code> 实验对比，直接支撑"变差就回滚"</td><td><span class="pill ok">已装</span></td></tr>
+<tr><td>rqalpha</td><td>6.4.1</td><td>单引擎无人对账</td><td>A 股规则最成熟的引擎之一 → 给 qbt 做<b>独立第二引擎对账</b>；装在<b>隔离 venv</b>，避免依赖冲突</td><td><span class="pill ok">已装</span></td></tr>
+<tr><td>plotly</td><td>7.1.0</td><td>静态图</td><td>HTML 交互图表，报告可直接点开看</td><td><span class="pill ok">已装</span></td></tr>
+<tr><td>akshare / tushare / baostock / mootdx</td><td>— / 1.4.29 / — / 0.11.7</td><td>零散取数脚本</td><td>在线源做增量补齐与交叉校验，与主库<b>物理隔离</b></td><td><span class="pill ok">已装</span></td></tr>
+<tr><td>macOS Vision OCR</td><td>Swift 6.3.3</td><td>autoclaw 的 OCR 代理</td><td>本机已实测：<code>VNRecognizeTextRequest(.accurate, zh-Hans/zh-Hant/en-US)</code> 中文还原优秀，<b>零安装、零凭据</b></td><td><span class="pill ok">可用</span></td></tr>
+<tr><td>mcp-markets</td><td>0.13.1</td><td>—</td><td>31 个金融 MCP 工具（含龙虎榜/资金流/北向/回测），本是好选择</td><td><span class="pill no">装不上</span></td></tr>
+<tr><td>akshare-stock-mcp</td><td>0.1.0</td><td>MCP 数据接入备选</td><td>mcp-markets 不可用时的替补</td><td><span class="pill ok">已装</span></td></tr>
+</table>
+
+<div class="box warn">
+  <div class="t">mcp-markets 为什么装不上（诚实的失败记录）</div>
+  <p>它依赖 <code>easy-tdx&gt;=1.14</code>，而 <code>easy-tdx</code> 在 PyPI 上是 <b>HTTP 404</b>（只存在于 GitHub）。这是包自身发布的缺陷，不是你的环境问题。<br>
+  → 处置：改用你本机既有的一栈（<code>akshare</code> + <code>tushare</code> + <code>baostock</code> + <code>mootdx</code> + <code>pytdx</code>），并保留 <code>akshare-stock-mcp</code> 作为 MCP 接入备选。<br>
+  <span class="small">另注：<code>mootdx</code> 0.11.x 有已知的 BESTIP 空串 bug（TradingAgents 项目文档有记录），接入时需显式做服务器选活。</span></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10 · 环境与依赖现状</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  UV["uv 0.13.0<br/>brew 安装"]
+  UV --> V1["主 venv · Python 3.11.16<br/>206 个包 · 已锁 requirements.lock.txt"]
+  UV --> V2["rqalpha venv · Python 3.11.16<br/>42 个包 · 完全隔离"]
+  V1 --> P1["数据：duckdb 1.5.6 · polars 2.0.0<br/>pyarrow 26.0.0 · pandas 3.0.6 · numpy 2.4.6"]
+  V1 --> P2["质量：duckguard 3.2.0 · pandera 0.34.1"]
+  V1 --> P3["统计：statsmodels 0.15.0 · sklearn 1.9.1<br/>scipy 1.17.1 · plotly 7.1.0"]
+  V1 --> P4["工程：dbt-duckdb · dvc 3.67.1 · purgedcv 0.1.10"]
+  V1 --> P5["数据源：akshare · tushare 1.4.29<br/>baostock · mootdx 0.11.7 · pytdx"]
+</pre>
+  <div class="cap">图 14 · 环境已就绪。<code>Python 3.11.16</code> 的理由：<code>scikit-learn 1.9.1</code> 要求 <code>&gt;=3.11</code>，且你自己两个成熟工程（alphadesk / vibe-astock）都跑在 3.11.16；系统默认的 3.14.7 太新</div>
+</div>
+
+<div class="box info">
+  <div class="t">安装中发现的两个真实问题（都已解决，记录备查）</div>
+  <p><b>① <code>~/.cache</code> 属主是 root</b>（<code>drwxr-xr-x root staff</code>）→ 用户无法在其中创建目录 → <code>uv</code> 默认缓存初始化失败（<code>Permission denied</code>）。<br>
+  解决：改用 <code>UV_CACHE_DIR=~/.uv-cache</code>，与你既有的 <code>~/.npm-cache-qqbot</code>、<code>~/.npm-cache-vibe</code> 约定一致。</p>
+  <p><b>② <code>purged-cross-validation</code> 是错的包名</b>——PyPI 上实际叫 <code>purgedcv</code>。装前逐个校验包名（HTTP 状态 + requires_python）避免了这个坑，也顺带确认了 <code>scikit-learn</code> 的 3.11 下限。</p>
+</div>
+
+<h3>10.1 大版本变更风险（必须知道的坑）</h3>
+<table>
+<tr><th>包</th><th>装到的版本</th><th>风险</th></tr>
+<tr><td>pandas</td><td><b>3.0.6</b></td><td>相对 2.x 是重大版本；alphadesk 的部分代码按 2.x 写。<b>qbt 明确不依赖 pandas</b>（为逐位可复现），不受影响</td></tr>
+<tr><td>polars</td><td><b>2.0.0</b></td><td>相对 1.x API 有破坏性变更，写新代码时以 2.0 文档为准</td></tr>
+<tr><td>numpy</td><td>2.4.6</td><td>老代码若用 <code>np.float_</code> 之类会报错</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s11">11 · 目录结构</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  R["deepseek_workspace/stock/"]
+  R --> V[".venv/ · .venv-rqalpha/"]
+  R --> DOC["docs/<br/>本方案 HTML · 架构文档"]
+  R --> KN["knowledge/<br/>索引 jsonl · 重建脚本 · 信任分级"]
+  R --> EN["engine/<br/>执行引擎（待裁决 qbt / alphadesk）"]
+  R --> GA["gates/<br/>DuckGuard 契约 · dbt 模型"]
+  R --> CT["context/<br/>六类 Builder"]
+  R --> JD["judge/<br/>证据卡 · 概率 · 决策卡"]
+  R --> RV["review/<br/>冻结 · 归因 · CP 卡 · 四重门"]
+  R --> PA["params/<br/>权重阈值（DVC 版本化）"]
+  R --> RU["runs/<br/>运行产物 · 可复现"]
+  R --> TL["tools/<br/>OCR · 书籍处理"]
+  R --> TS["tests/"]
+</pre>
+  <div class="cap">图 15 · 目录结构。知识库存放在原处只读引用，不复制进项目（避免两份不一致）</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s12">12 · 里程碑</h2>
+
+<div class="fig">
+<pre class="mermaid">
+gantt
+  title 实施路线（依赖严格串行：上游未验收，下游不开工）
+  dateFormat YYYY-MM-DD
+  axisFormat %m-%d
+  section 保护与核验
+  M-1 建 git 基线 + 双引擎对照   :m1, 2026-10-13, 2d
+  M0 事实核验 + 知识层重建       :m0, after m1, 4d
+  section 感知与判断
+  M1 数据闸门 + 六类 Context     :m2, after m0, 4d
+  M2 证据卡 + 结构化记忆         :m3, after m2, 3d
+  M3 判断层：概率加权决策卡      :m4, after m3, 4d
+  section 执行与进化
+  M4 引擎对接 + 计划vs实际       :m5, after m4, 3d
+  M5 复盘闭环 + 四重门 + 回滚    :m6, after m5, 5d
+  M6 设定参数化 + 知识索引校验   :m7, after m6, 3d
+  M7 模拟盘连续运行 5 日         :m8, after m7, 5d
+</pre>
+  <div class="cap">图 16 · 路线图。每个 M 收尾必须：① 全量离线测试通过 ② 真数据脚本数字留存 ③ 更新架构文档该节状态</div>
+</div>
+
+<table>
+<tr><th>M</th><th>交付</th><th>验收（可复算）</th></tr>
+<tr><td><b>M-1</b></td><td>① alphadesk git 基线 ② qbt ↔ alphadesk 能力对照实测</td><td>对照报告：同一输入下两边数值差异逐列列出（含 sha256），<b>以数据决定谁做哪一层</b></td></tr>
+<tr><td><b>M0</b></td><td>事实核验补完 + 知识层重建</td><td>① 20 组实证数字逐条复现 ② 6 本富要点回填 ③ 2 本字形书 OCR 重跑 ④ 577 张 T2 补正文或打 <code>unverifiable</code> ⑤ 59 张去重 ⑥ 剥离 autoclaw 层 ⑦ 产出 <code>knowledge_index.jsonl</code></td></tr>
+<tr><td><b>M1</b></td><td>DuckGuard 契约 + 六类 Context</td><td>2026-10-09 真数据断言：涨停 69、最高 9 连板、上涨 3294/下跌 2146、成交额 19167 亿、动力电池回收 115→3；<code>zt_pool_broken</code> 10-09 必须判 <code>MISSING</code> 而非 0</td></tr>
+<tr><td><b>M2</b></td><td>证据卡 + 校验器 + 结构化记忆</td><td>负测试：引用不存在的 id、引用 <code>UNVERIFIED</code> 字段、把 <code>未证实</code> 当唯一定性依据 → 必须失败</td></tr>
+<tr><td><b>M3</b></td><td>判断层</td><td>一张真实决策卡：五档概率、期望值可复算、反面证据 ≥1、杀死理由 3 条、schema 里无 <code>veto</code> 字段</td></tr>
+<tr><td><b>M4</b></td><td>引擎对接 + 双引擎对账</td><td>同一条决策 <code>verify</code> 逐位一致；被拒/T+1 顺延必须回写决策卡；rqalpha 独立复算差异逐列列出</td></tr>
+<tr><td><b>M5</b></td><td>复盘闭环</td><td><b>负例验收</b>：故意提交一个做坏的调整 → 门失败 → <b>自动回滚</b> + 写 <code>FAILED.md</code>；151 条错误清单回归全跑</td></tr>
+<tr><td><b>M6</b></td><td>设定参数化 + 知识索引校验</td><td>引用不存在的 vault 路径必须报错；每条心法可追溯到 <code>path#line</code>；注入体积守卫生效</td></tr>
+<tr><td><b>M7</b></td><td>模拟盘连续运行</td><td>连续 5 交易日：零重复单、每日账本自检通过、日报送达、<b>outcome 覆盖率 100%</b></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s13">13 · 明确不做</h2>
+
+<table>
+<tr><th>不做</th><th>理由</th></tr>
+<tr><td>❌ 继承 autoclaw 的工作流层（总纲 / 作战手册 / 诉求 / 体系文件）</td><td>你明确要求忽略；且其自查根因是"规则加载不全 + 无执行校验"</td></tr>
+<tr><td>❌ 继承 L0 铁律 / 八步链路 / <b>否决分级 A-B-C</b> / 记忆 L0–L5</td><td>已实测否证；qbt 架构文档也已判定丢弃</td></tr>
+<tr><td>❌ 拆 <code>Orchestrator + 4 专家 + Critic</code> 多体拓扑</td><td>151 条错误中<b>没有一条</b>以"专家不够多"为根因；其自家评估结论是"不是先拆 agent"</td></tr>
+<tr><td>❌ 直接使用《30 信号权重》</td><td>其底层回测自查含未来函数（收益虚高 +34% → 修复后 −2.78%）与"涨停价可成交"假设错误 → <b>必须重跑</b></td></tr>
+<tr><td>❌ 用「替代指标」判数据就绪</td><td>血证：2026-07-30 数据全空但系统照样点名一只当天 <b>−6.81%</b> 的票当"主线代表"</td></tr>
+<tr><td>❌ 让 LLM 自由生成 SQL</td><td>未来函数 / as-of 泄漏 / 混库三事故</td></tr>
+<tr><td>❌ 用 <code>adj_factor.hfq_factor</code> 自算复权</td><td>alphadesk 实测：口径切换日 <b>92.5%</b> 标的比值≠1，长飞跳 <b>8.30%</b></td></tr>
+<tr><td>❌ 靠文档描述判定复权口径</td><td>alphadesk <code>_last_close</code> 文档写"不复权"实际走后复权 → 显示 <b>+604%</b>（真实 −7.16%）→ 口径必须代码断言</td></tr>
+<tr><td>❌ 让 NULL 静默变 0</td><td><code>fetchnumpy</code> 丢掩码 → NULL→0.0，是静默数据污染</td></tr>
+<tr><td>❌ 默认开启 regime 自适应层</td><td>alphadesk 实测样本外 <b>−40.97pp</b>，其自家建议退回默认关闭 → 必须先证有 edge</td></tr>
+<tr><td>❌ 用 <code>hk_connect_*</code> 作依据</td><td>实测止于 <b>2024-08-16</b>（北向资金）</td></tr>
+<tr><td>❌ 用 <code>table_meta</code> 当新鲜度真源</td><td>其 <code>updated_at</code> 停在 10-09，已失真（两处独立实测证实）</td></tr>
+<tr><td>❌ 在缺口日决策</td><td>实测 T10：2026-10-12 日线/分钟/涨跌停全缺 → fail-closed</td></tr>
+<tr><td>❌ 混用东财/同花顺口径</td><td>实测 T8：涨停家数 69 vs 72</td></tr>
+<tr><td>❌ 未实测的性能优化</td><td>alphadesk：pandas 微优化实测<b>更慢 11.4%</b>（已逐字节还原）；并行取数是<b>假优化</b>（取数仅 1.07 秒）</td></tr>
+<tr><td>❌ 改用例来"通过" / 用"基本可用"结项</td><td>alphadesk DOD 明文禁止</td></tr>
+<tr><td>❌ 接券商报单接口</td><td>目标形态是模拟盘；"绝不报单"是引擎红线</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s14">14 · 风险与待确认决策</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  R1["R1 577 张卡不可审计<br/>最大两本书无正文"] --> M1["M0 补正文，否则标 unverifiable<br/>不得单独定性"]
+  R2["R2 概率校准冷启动"] --> M2["前 N 笔只记录不计权<br/>门槛带 独立日 ≥30"]
+  R3["R3 过拟合历史回放"] --> M3["四重门 + purgedcv CPCV + Embargo"]
+  R4["R4 alphadesk 零版本保护"] --> M4["M-1 先建 git 基线"]
+  R5["R5 交易制度变更<br/>创业板 20cm / 科创板 / ST 5cm"] --> M5["涨跌停一律读 limit_price<br/>绝不按比例自算"]
+  R6["R6 盗版水印污染 OCR 文本"] --> M6["OCR 后过滤水印<br/>（已实测会读出 7help.net 之类）"]
+  R7["R7 ~/.cache 属主 root"] --> M7["UV_CACHE_DIR=~/.uv-cache<br/>已解决"]
+</pre>
+  <div class="cap">图 17 · 风险与对策（每条都有可执行的处置，而不是"注意"）</div>
+</div>
+
+<h3>14.1 待你拍板</h3>
+<table>
+<tr><th>#</th><th>决策点</th><th>选项</th><th>我的建议</th></tr>
+<tr><td><b>D1</b></td><td><b>基座裁决</b>（最高优先，决定后续一切）</td><td>A. qbt 做执行引擎 + alphadesk 做判断/工具层复用<br>B. 全量押 alphadesk + 移植 qbt 三项<br>C. 只押 qbt，Agent 层从零写</td><td><b>A</b>，但先用 M-1 的实测对照确认，不用文档定</td></tr>
+<tr><td><b>D2</b></td><td>是否立即给 alphadesk 建 git 基线</td><td>A. 立即（我需写权限）<br>B. 你自己做<br>C. 暂不做</td><td><b>A 或 B，但必须做</b>——47,215 行 + 749 个实测通过的用例目前零版本保护</td></tr>
+<tr><td><b>D3</b></td><td>577 张 T2 卡怎么处理</td><td>A. 用已找到的原件补正文，升为 T1<br>B. 直接标 <code>unverifiable</code> 并从高可信层移出<br>C. 两条并行（先标记，再逐步补）</td><td><b>C</b>——先保证不被误用，再逐步补</td></tr>
+<tr><td><b>D4</b></td><td>知识层是否真的完全弃用 autoclaw 层</td><td>A. 按本方案（整层丢弃，只留 151 条错误当回归清单）<br>B. 保留部分作为"线索"待复核<br>C. 你另有指示</td><td><b>A</b>——但 151 条错误清单我个人建议保留为<b>缺陷回归基线</b>（它不是知识，是可追溯的失败记录）</td></tr>
+<tr><td><b>D5</b></td><td>项目根目录确认</td><td><code>/Users/zenghui/Documents/deepseek_workspace/stock/</code></td><td>已按你指定创建，venv 与锁定文件已落在其中</td></tr>
+</table>
+
+<hr>
+<p class="small">本方案全部结论来自 2026-10-12 本机实测；未核验项已标注。<br>
+证据附件：<code>知识点卡审计报告.md</code>（2238 卡审计）· <code>kb-cards-index.jsonl</code>（2238 行索引）· <code>BOOK_ASSET_LEDGER.md</code>（17 本书台账）· <code>quant-asset-inventory.md</code>（代码资产盘点）</p>
+
+</div>
+<!--MERMAID_LIB-->
+</body>
+</html>

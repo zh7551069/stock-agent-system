@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>stock/judge 脚本说明书</title>
+<style>
+  :root {
+    --ink: #1a1a1a; --muted: #666; --line: #e3e3e3;
+    --bg: #fafafa; --card: #fff; --code-bg: #0f172a; --code-ink: #e2e8f0;
+    --accent: #0f766e; --accent-soft: #ecfdf5;
+    --lib: #7c3aed; --lib-soft: #f5f3ff;
+    --cli: #b45309; --cli-soft: #fffbeb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--ink); line-height: 1.7; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 28px 80px; }
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 18px; margin-bottom: 26px; }
+  header h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.02em; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  .note { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px;
+          border-radius: 6px; margin: 18px 0; font-size: 14px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; letter-spacing: -0.01em; }
+  h2 .en { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 8px; }
+  table { border-collapse: collapse; width: 100%; background: var(--card);
+          border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line);
+           vertical-align: top; font-size: 14px; }
+  th { background: #f5f5f5; font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td code, .badge { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 600; }
+  .badge.lib { background: var(--lib-soft); color: var(--lib); }
+  .badge.cli { background: var(--cli-soft); color: var(--cli); }
+  .script { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+            padding: 20px 22px; margin: 16px 0; }
+  .script h3 { margin: 0 0 6px; font-size: 17px; }
+  .script h3 code { color: var(--accent); }
+  .script .kind { float: right; }
+  .script .one { font-weight: 600; margin: 4px 0 10px; }
+  .kv { display: grid; grid-template-columns: 120px 1fr; row-gap: 6px; font-size: 14px; margin: 10px 0; }
+  .kv dt { color: var(--muted); font-weight: 600; }
+  .kv dd { margin: 0; }
+  pre { background: var(--code-bg); color: var(--code-ink); padding: 14px 16px;
+        border-radius: 8px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px; line-height: 1.55; margin: 12px 0; }
+  pre code { color: inherit; }
+  .cmd { background: #1e293b; color: #a5f3fc; }
+  .usage { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+           background: #f1f5f9; padding: 2px 8px; border-radius: 6px; color: #0f172a; }
+  .who { color: #065f46; }
+  @media print { body { background: #fff; } .script { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>stock/judge 脚本说明书</h1>
+  <div class="meta">生成时间 2026-10-25 · 数据源 taobao_minute.duckdb（当前水位 2026-10-22） · 用途：逐个确认判决器 11 个 py 文件的职责、输出与使用者</div>
+</header>
+
+<div class="note">
+  <b>先看这个</b>：<code>stock/judge/</code> 是「判决器」——度量一条历史决策<b>真实做对没有</b>的确定性代码，与选手（策略/决策引擎）物理隔离。分两类：<span class="badge lib">库模块</span>（无 CLI，被 import）4 个，<span class="badge cli">CLI 脚本</span>（可命令行跑）7 个。
+</div>
+
+<h2>一、总览</h2>
+<table>
+  <thead>
+    <tr><th>脚本</th><th>性质</th><th>一句话功能</th><th>主要使用者 / 场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>outcome.py</code></td><td><span class="badge lib">库</span></td><td>判决核心：复算单条决策的真实结果（剔 beta 超额、可成交性、成本毛/净）</td><td>所有判决脚本的底座</td></tr>
+    <tr><td><code>bulk.py</code></td><td><span class="badge lib">库</span></td><td>BulkLibrary：按「信号日」批量预取 + 缓存，批量与单条结果一致</td><td>baseline/probe/slice 等批量回放</td></tr>
+    <tr><td><code>stats.py</code></td><td><span class="badge lib">库</span></td><td>统计口径：按日期对齐的配对 t（DaySeries）、n≥5 门禁</td><td>所有脚本的统计层</td></tr>
+    <tr><td><code>baseline.py</code></td><td><span class="badge cli">CLI</span></td><td>「T 日涨停 → T+1 开盘买」跨 879 独立日回放，vs 同日随机对照 + 配对 t</td><td>回测判决官：给涨停规则做基线证伪</td></tr>
+    <tr><td><code>probe.py</code></td><td><span class="badge cli">CLI</span></td><td>多信号假设检验流水线（涨停/跌停/新低/RSI/资金流等），统一对照 + 配对 t</td><td>因子工坊/策略师：快速探一个信号有没有 alpha</td></tr>
+    <tr><td><code>slice.py</code></td><td><span class="badge cli">CLI</span></td><td>在「涨停买入」已证伪的规则里，按 7 维切分找正期望子集</td><td>策略师：regime 分层、找有效子集</td></tr>
+    <tr><td><code>exit_sim.py</code></td><td><span class="badge cli">CLI</span></td><td>同一入场下比较 9 种退出规则（止损/止盈/跟踪/时间止损）的真实期望</td><td>策略师：研究「怎么走」而非「选什么」</td></tr>
+    <tr><td><code>calibrate.py</code></td><td><span class="badge cli">CLI</span></td><td>判决器自校准三关：恒等 / 零假设 / 已知正 alpha（低换手）</td><td>维护者：证明尺子既能测负也能测正</td></tr>
+    <tr><td><code>oracle_check.py</code></td><td><span class="badge cli">CLI</span></td><td>Oracle 检验：偷看未来选「实际最强」票，判决器必须给出巨大正号（能力下限）</td><td>维护者/评测平台：口径变更后必跑</td></tr>
+    <tr><td><code>demo_limitup.py</code></td><td><span class="badge cli">CLI</span></td><td>单日涨停池快照演示，看真实 T+1/3/5/20 结果</td><td>自检 / 演示</td></tr>
+    <tr><td><code>__init__.py</code></td><td><span class="badge lib">库</span></td><td>包文档：声明「与选手物理隔离」的设计原则</td><td>—（无功能代码）</td></tr>
+  </tbody>
+</table>
+
+<h2>二、库模块（被 import，无 CLI）</h2>
+
+<div class="script">
+  <h3><span class="kind badge lib">库模块</span><code>outcome.py</code> — 事实冻结核心</h3>
+  <div class="one">给定一条决策（<code>Decision</code>），从主库复算它<b>已经发生的真实结果</b>（<code>Outcome</code>）。整个系统唯一合法的验收标准来源。</div>
+  <dl class="kv">
+    <dt>核心口径</dt><dd>T+1 开盘入场 → T+k 收盘；超额 = 个股 − 沪深300（剔 beta）；封板/停牌不可成交记为「缺失」非 0；成本毛/净两套（净 = 毛 − 0.15% 往返）。</dd>
+    <dt>对外对象</dt><dd><code>Decision</code> / <code>Outcome</code> / <code>Quality</code> / <code>judge()</code> / <code>summarize()</code> / <code>Library</code></dd>
+    <dt>输出文件</dt><dd>无（纯库）</dd>
+    <dt class="who">使用者</dt><dd class="who">其余 7 个 CLI 脚本的底座；未来「回测判决官」agent 的确定性代码。</dd>
+  </dl>
+  <pre><code># 单条判决的 Outcome.as_dict() 摘要
+{"code": "002084.SZ", "tradable": false, "reason": "limit_up_on_open",
+ "ret": {"5": null}, "excess": {"5": null}, "ret_net": {"5": null}, ...}
+
+# summarize() → Quality.as_dict() 摘要
+{"n_total": 70, "n_tradable": 63, "n_untradable": 7,
+ "avg_excess": {"5": 0.0520}, "avg_excess_net": {"5": 0.0505}, ...}</code></pre>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge lib">库模块</span><code>bulk.py</code> — 批量缓存</h3>
+  <div class="one">把「按天取数」合并成少数几条查询；同一天所有标的的行情/涨跌停/停牌一次性取回并缓存，再逐条调用<b>同一个</b> <code>judge()</code>。</div>
+  <dl class="kv">
+    <dt>核心保证</dt><dd>批量与单条判决<b>结果必然一致</b>（同一计算路径），只做缓存不改口径。</dd>
+    <dt>对外对象</dt><dd><code>BulkLibrary(Library)</code> · <code>prefetch_day()</code> · <code>universe()</code></dd>
+    <dt>输出文件</dt><dd>无（纯库）</dd>
+    <dt class="who">使用者</dt><dd class="who">baseline / probe / slice / calibrate / oracle_check / exit_sim 做批量回放。</dd>
+  </dl>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge lib">库模块</span><code>stats.py</code> — 统计口径</h3>
+  <div class="one">刻意保持极小、无依赖：统计口径一旦分叉，跨假设的对比就不成立。</div>
+  <dl class="kv">
+    <dt>核心函数</dt><dd><code>DaySeries</code>（按独立日携带日期）· <code>day_series</code> · <code>mean</code> · <code>tstat(min_n=5)</code> · <code>paired_t / paired_diff</code>（按日期交集配对）</dd>
+    <dt>钉死的坑</dt><dd>配对必须按<b>日期</b>对齐，不能按索引（同一天多股高度相关，必须先按日聚合成一个观测值）。</dd>
+    <dt>输出文件</dt><dd>无（纯库）</dd>
+    <dt class="who">使用者</dt><dd class="who">所有 CLI 脚本的统计层。</dd>
+  </dl>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge lib">库模块</span><code>__init__.py</code> — 包文档</h3>
+  <div class="one">声明设计原则：本包与选手（决策/引擎）物理隔离；若与选手共享代码就共享同一个 bug，判决随之失效。</div>
+  <dl class="kv">
+    <dt>内容</dt><dd>仅 docstring，无功能代码。</dd>
+    <dt class="who">使用者</dt><dd class="who">—（文档入口）。</dd>
+  </dl>
+</div>
+
+<h2>三、CLI 脚本</h2>
+
+<div class="script">
+  <h3><span class="kind badge cli">CLI</span><code>baseline.py</code> — 基线回放（涨停买入证伪）</h3>
+  <div class="one">把「T 日涨停 → T+1 开盘买」当一条决策规则，跨多个<b>独立日</b>回放，与<b>同日随机对照</b>做配对 t 检验。</div>
+  <dl class="kv">
+    <dt>用法</dt><dd><span class="usage">.venv/bin/python judge/baseline.py --start 2023-01-01 --end 2026-08-25 --control 200 --min-samples 20</span></dd>
+    <dt>输出文件</dt><dd><code>judge/reports/baseline_{start}_{end}.json</code>（by_horizon / by_year / per_day 逐日明细）</dd>
+    <dt class="who">使用者 / 场景</dt><dd class="who">回测判决官——给「涨停就买」这条最朴素的规则做基线证伪，回答「涨停本身有没有信息」。</dd>
+  </dl>
+  <pre><code>基线回放结果 | 879 个独立日 | 对照抽样 200 只/日 | 往返成本 0.15%
+   窗口  组    日数  平均超额(毛)  平均超额(净)    t值    胜日占比  可成交
+  T+5   涨停   879   -1.21%      -1.36%      -8.78   37.5%   55342
+  T+5   对照   879   +0.22%      +0.07%      +2.53   57.5%  175521
+        差值         -1.43%            ← 配对 t = -13.22（成本抵消）
+  T+20  涨停   879   -2.54%      -2.69%      -9.66   35.7%   55342</code></pre>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge cli">CLI</span><code>probe.py</code> — 多信号假设检验流水线</h3>
+  <div class="one">同一把尺子（相同入场/窗口/对照/配对检验）换信号即可比较，跨信号结果可比。</div>
+  <dl class="kv">
+    <dt>内置信号</dt><dd><code>limit_up</code> / <code>limit_down</code> / <code>drop5</code> / <code>drop3d</code> / <code>new_low60</code> / <code>rsi6_lt20</code>；RANKED 类：<code>flow_top</code> / <code>flow_bottom</code> / <code>lhb_net_top</code>（按日横截面取分位）。</dd>
+    <dt>用法</dt><dd><span class="usage">.venv/bin/python judge/probe.py --start 2023-01-01 --end 2026-08-25 --signals limit_up,drop5 --control 200</span></dd>
+    <dt>输出文件</dt><dd><code>judge/reports/probe_{start}_{end}.json</code>（每信号 by_horizon）</dd>
+    <dt class="who">使用者 / 场景</dt><dd class="who">因子工坊 / 策略师——快速探一个新信号有没有 alpha（进攻侧 / 恐慌侧 / 资金流）。</dd>
+  </dl>
+  <pre><code>## new_low60 · 收盘创 60 日新低
+      窗口    处理组毛   处理组净     t     胜率     对照组     t      差值    配对t
+     T+20    +7.41%    +7.26%   +6.21   84.3%    +4.54%  +7.01   +2.86%   +2.99
+
+## 跨信号对照（T+20 配对差值 vs 同日对照）
+          信号              日数   处理组笔数    T+20差值    配对t
+   new_low60                 40      7,511      +2.86%    +2.99</code></pre>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge cli">CLI</span><code>slice.py</code> — 分层判决（找正期望子集）</h3>
+  <div class="one">在「涨停买入」已证伪的规则里，按 7 维切分、逐桶给剔 beta 超额 + 按独立日 t 值，找是否存在正期望子集。</div>
+  <dl class="kv">
+    <dt>7 个维度</dt><dd>连板高度 / 涨停时间 / 封单额(三分位) / 换手率 / 实际流通市值(三分位) / 同板块家数 / 昨日是否涨停。</dd>
+    <dt>用法</dt><dd><span class="usage">.venv/bin/python judge/slice.py --start 2023-01-01 --end 2026-08-25</span></dd>
+    <dt>输出文件</dt><dd><code>judge/reports/slice_{start}_{end}.json</code>（by_board/by_time/… 每桶 t5/t5_net/t20/t20_net）</dd>
+    <dt class="who">使用者 / 场景</dt><dd class="who">策略师——regime 分层、找有效子集（当前结论：7 维 × 20 桶<b>无一个正显著桶</b>）。</dd>
+  </dl>
+  <pre><code>## 按「连板高度」分层
+                 桶     笔数   日数    T+5毛     T+5净     t值     胜率    T+20毛    T+20净
+               首板   39,720   883   -0.97%   -1.12%   -7.56   41.1%   -2.13%   -2.28%
+               2板    8,832   880   -1.92%   -2.07%   -8.43   38.1%   -3.36%   -3.51%
+              3板+    7,557   868   -1.76%   -1.91%   -5.37   39.7%   -3.65%   -3.80%</code></pre>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge cli">CLI</span><code>exit_sim.py</code> — 退出规则模拟器</h3>
+  <div class="one">同样的入场下，比较不同退出规则的真实期望——回答「机会可能不在选什么，而在怎么走」。</div>
+  <dl class="kv">
+    <dt>9 种规则</dt><dd><code>hold20</code> / <code>sl5</code> / <code>sl8</code> / <code>tp10</code> / <code>sl5_tp10</code> / <code>sl5_tp15</code> / <code>trail5</code> / <code>sl5_trail5</code> / <code>time5</code>（止损/止盈/跟踪/时间止损）。</dd>
+    <dt>用法</dt><dd><span class="usage">.venv/bin/python judge/exit_sim.py --signal limit_up --start 2023-01-01 --end 2026-08-25 --cost 0.0015</span></dd>
+    <dt>输出文件</dt><dd><code>judge/reports/exit_{signal}_{start}_{end}.json</code>（rules.{name}.treat_gross/treat_net/diff_net/paired_t_net）</dd>
+    <dt class="who">使用者 / 场景</dt><dd class="who">策略师——研究出场规则能否截断 MAE、留住 MFE（当前结论：均未翻转负漂移）。</dd>
+  </dl>
+  <pre><code>规则        处理组毛   处理组净   平均持有   差值(净)   配对t(净)
+hold20      -2.34%    -2.49%    19.9d     -3.25%     -17.61
+sl5         -0.45%    -0.60%     6.8d     -1.19%     -10.10</code></pre>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge cli">CLI</span><code>calibrate.py</code> — 判决器自校准</h3>
+  <div class="one">证明这把尺子<b>既能测出负、也能测出正</b>：恒等检验 / 零假设检验 / 已知正 alpha 检验。</div>
+  <dl class="kv">
+    <dt>三关</dt><dd>① 恒等（自己减自己 = 0）② 零假设（随机票劈两半，差值 ≈0 不显著）③ 已知正 alpha（低换手应跑赢）。</dd>
+    <dt>用法</dt><dd><span class="usage">.venv/bin/python judge/calibrate.py --start 2023-01-01 --end 2026-08-25 --per-side 200</span></dd>
+    <dt>输出文件</dt><dd><code>judge/reports/calibrate_{start}_{end}.json</code>（identity_ok / null_test / low_turnover）</dd>
+    <dt class="who">使用者 / 场景</dt><dd class="who">维护者——判决器上线前 / 口径变更后自校准；若测不出正号，前面所有负结论都要作废。</dd>
+  </dl>
+  <pre><code>## 第 2 关 · 零假设检验（两边都无信号，期望差值 ≈ 0）
+   窗口  处理组超额     t      对照组超额     t       差值     配对t   共同日
+   T+5   +0.22%    +2.45    +0.22%    +2.46   +0.00%   +0.11     883   ← 不显著 ✓
+
+## 第 3 关 · 已知正 alpha（最低 20% 换手，期望差值应为正）
+   T+5   +0.16%    +2.59    +0.22%    +2.20   -0.07%   -0.83     864   ← 未测出正号 ⚠️</code></pre>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge cli">CLI</span><code>oracle_check.py</code> — Oracle 检验（能力下限）</h3>
+  <div class="one">故意偷看未来——每天选实际 T+k 超额最高的 N 只当处理组。正确的判决器<b>必然</b>给出巨大正号；测不出 = 尺子坏了。</div>
+  <dl class="kv">
+    <dt>用法</dt><dd><span class="usage">.venv/bin/python judge/oracle_check.py --start 2023-01-01 --end 2026-08-25 --sample 600 --top 150</span></dd>
+    <dt>输出文件</dt><dd><code>judge/reports/oracle_{start}_{end}.json</code>（passed + 各 horizon diff/paired_t）</dd>
+    <dt class="who">使用者 / 场景</dt><dd class="who">维护者 / 评测平台——数据源或口径变更后必跑的决定性测试。</dd>
+  </dl>
+  <pre><code>## Oracle 检验：偷看未来选「实际最强」的票
+   窗口   oracle组超额     t     随机组超额     t       差值      配对t   共同日
+   T+5   +7.52%    +68.36    +0.22%   +2.39   +7.30%   +106.53    883
+  T+20   +16.10%   +65.04    +0.96%   +5.20   +15.14%  +107.44    883
+   判定：✅ 判决器有能力识别正 alpha —— 之前的负结论可信</code></pre>
+</div>
+
+<div class="script">
+  <h3><span class="kind badge cli">CLI</span><code>demo_limitup.py</code> — 单日快照演示</h3>
+  <div class="one">把某日涨停池当一批决策，看真实 T+1/3/5/20 结果——不是策略，是<b>判决器自检</b>。</div>
+  <dl class="kv">
+    <dt>用法</dt><dd><span class="usage">.venv/bin/python judge/demo_limitup.py 2026-08-25</span></dd>
+    <dt>输出文件</dt><dd><code>judge/reports/limitup_{day}.json</code>（quality + 逐笔 outcomes）</dd>
+    <dt class="who">使用者 / 场景</dt><dd class="who">自检 / 演示——单日事件快照，<b>无配对 t、无显著性</b>，不能单独下结论。</dd>
+  </dl>
+  <pre><code>=== 样本：2026-08-25 涨停池 70 只（东财口径）===
+决策数 70 | 可成交 63 | 不可成交 7    （limit_up_on_open 7 例）
+   窗口   胜率(净&gt;0)   平均超额(毛)   平均超额(净)   盈亏比
+   T+5      0.65      +5.20%      +5.05%      2.01
+  T+20      0.46      +4.35%      +4.20%      2.48</code></pre>
+</div>
+
+<h2>四、使用关系速记</h2>
+<table>
+  <thead><tr><th>要回答的问题</th><th>跑哪个</th><th>关键看什么</th></tr></thead>
+  <tbody>
+    <tr><td>「涨停买入」有没有 alpha？</td><td><code>baseline.py</code></td><td>配对 t（涨停 − 对照）是否显著为负</td></tr>
+    <tr><td>某个新信号有没有 alpha？</td><td><code>probe.py</code></td><td>跨信号对照的配对 t</td></tr>
+    <tr><td>有没有哪个子集是正期望？</td><td><code>slice.py</code></td><td>各分桶 T+5/T+20 净超额 + t</td></tr>
+    <tr><td>换种出场规则会不会更好？</td><td><code>exit_sim.py</code></td><td>各规则差值(净) + 配对 t(净)</td></tr>
+    <tr><td>判决器本身可不可信？</td><td><code>calibrate.py</code> + <code>oracle_check.py</code></td><td>零假设不显著 + oracle 强正</td></tr>
+    <tr><td>快速看某天涨停后表现</td><td><code>demo_limitup.py</code></td><td>单日快照（仅供自检）</td></tr>
+  </tbody>
+</table>
+
+</div>
+</body>
+</html>

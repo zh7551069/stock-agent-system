@@ -1,0 +1,133 @@
+// ─────────────────────────────────────────────
+// 分层架构图（Layer Architecture）
+// 用法：在 markdown 里直接写 HTML，配合 .layer-arch 类
+//   <div class="layer-arch">
+//     <div class="la-row biz"><div class="la-label">业务支持</div><div class="la-cells"><span>…</span></div></div>
+//   </div>
+// ─────────────────────────────────────────────
+
+.layer-arch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vp-c-text-1, inherit);
+}
+
+.layer-arch .la-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+/* 左侧层标签（横向） */
+.layer-arch .la-label {
+  flex: 0 0 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+/* 左侧层标签（纵向，用于大层与底座） */
+.layer-arch .la-label.vertical {
+  flex-basis: 44px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 3px;
+  padding: 8px 4px;
+}
+
+.layer-arch .la-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.layer-arch .la-subrow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.layer-arch .la-sublabel {
+  flex: 0 0 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #fff;
+  border-radius: 7px;
+  padding: 4px 6px;
+  background: #3a63a0;
+  box-sizing: border-box;
+}
+
+.layer-arch .la-cells {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.layer-arch .la-cells > span {
+  flex: 1 1 0;
+  min-width: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 7px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--vp-c-divider, rgba(128, 128, 128, 0.3));
+  background: var(--vp-c-bg-soft, rgba(128, 128, 128, 0.08));
+  color: var(--vp-c-text-1, inherit);
+  box-sizing: border-box;
+  font-size: 12.5px;
+}
+
+/* 层色带 */
+.layer-arch .la-row.biz .la-label   { background: #2e7d53; }
+.layer-arch .la-row.ux .la-label    { background: #3a8a5f; }
+.layer-arch .la-row.agent .la-label { background: #2d4f86; }
+.layer-arch .la-row.infra .la-label { background: #3f4550; }
+
+/* 大层背景（Agent 业务生产能力层） */
+.layer-arch .la-row.agent {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(45, 79, 134, 0.10);
+  border: 1px solid rgba(45, 79, 134, 0.35);
+}
+
+/* 小屏：层标签变成顶部横条 */
+@media (max-width: 720px) {
+  .layer-arch .la-row {
+    flex-direction: column;
+  }
+  .layer-arch .la-label,
+  .layer-arch .la-label.vertical {
+    flex-basis: auto;
+    writing-mode: horizontal-tb;
+    letter-spacing: 1px;
+  }
+  .layer-arch .la-subrow {
+    flex-direction: column;
+  }
+  .layer-arch .la-sublabel {
+    flex-basis: auto;
+  }
+}

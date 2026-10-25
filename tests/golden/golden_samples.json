@@ -1,0 +1,235 @@
+{
+  "meta": {
+    "source": "taobao_minute.duckdb + 腾讯 ifzq 交叉验证",
+    "generated_at": "2026-10-25",
+    "data_asof": "2026-10-22",
+    "cost_rate": 0.0015,
+    "bench": "sh000300"
+  },
+  "samples": [
+    {
+      "id": "gm_001",
+      "code": "000001.SZ",
+      "signal_date": "2024-01-03",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": -0.1086,
+      "judge": {
+        "tradable": true,
+        "reason": "",
+        "entry_date": "2024-01-04",
+        "entry_px": 7.71605,
+        "excess": {
+          "1": -0.00041817,
+          "5": 0.01812364,
+          "20": 0.07668806
+        },
+        "excess_net": {
+          "1": -0.00191817,
+          "5": 0.01662364,
+          "20": 0.07518806
+        }
+      }
+    },
+    {
+      "id": "gm_002",
+      "code": "600519.SH",
+      "signal_date": "2024-02-01",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": 0.319,
+      "judge": {
+        "tradable": true,
+        "reason": "",
+        "entry_date": "2024-02-02",
+        "entry_px": 1467.68259,
+        "excess": {
+          "1": 0.00073424,
+          "5": 0.01129622,
+          "20": -0.06600597
+        },
+        "excess_net": {
+          "1": -0.00076576,
+          "5": 0.00979622,
+          "20": -0.06750597
+        }
+      }
+    },
+    {
+      "id": "gm_003",
+      "code": "300750.SZ",
+      "signal_date": "2024-06-03",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": 2.3968,
+      "judge": {
+        "tradable": true,
+        "reason": "",
+        "entry_date": "2024-06-04",
+        "entry_px": 192.69883,
+        "excess": {
+          "1": 0.0108137,
+          "5": -0.05402712,
+          "20": -0.09729551
+        },
+        "excess_net": {
+          "1": 0.0093137,
+          "5": -0.05552712,
+          "20": -0.09879551
+        }
+      }
+    },
+    {
+      "id": "gm_004",
+      "code": "601318.SH",
+      "signal_date": "2025-01-02",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": -3.6847,
+      "judge": {
+        "tradable": true,
+        "reason": "",
+        "entry_date": "2025-01-03",
+        "entry_px": 46.36012,
+        "excess": {
+          "1": -0.00063413,
+          "5": -0.01147378,
+          "20": -0.01998837
+        },
+        "excess_net": {
+          "1": -0.00213413,
+          "5": -0.01297378,
+          "20": -0.02148837
+        }
+      }
+    },
+    {
+      "id": "gm_005",
+      "code": "000002.SZ",
+      "signal_date": "2023-03-01",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": 0.4667,
+      "judge": {
+        "tradable": true,
+        "reason": "",
+        "entry_date": "2023-03-02",
+        "entry_px": 16.16916,
+        "excess": {
+          "1": -0.015335,
+          "5": -0.03268339,
+          "20": -0.06707254
+        },
+        "excess_net": {
+          "1": -0.016835,
+          "5": -0.03418339,
+          "20": -0.06857254
+        }
+      }
+    },
+    {
+      "id": "gm_006",
+      "code": "002084.SZ",
+      "signal_date": "2026-08-25",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": 10.1266,
+      "judge": {
+        "tradable": false,
+        "reason": "limit_up_on_open",
+        "entry_date": "2026-08-26",
+        "entry_px": 4.79,
+        "excess": {
+          "1": null,
+          "5": null,
+          "20": null
+        },
+        "excess_net": {
+          "1": null,
+          "5": null,
+          "20": null
+        }
+      }
+    },
+    {
+      "id": "gm_007",
+      "code": "688981.SH",
+      "signal_date": "2024-10-08",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": null,
+      "judge": {
+        "tradable": true,
+        "reason": "",
+        "entry_date": "2024-10-09",
+        "entry_px": 72.19,
+        "excess": {
+          "1": 0.21313203,
+          "5": 0.10261069,
+          "20": 0.35686307
+        },
+        "excess_net": {
+          "1": 0.21163203,
+          "5": 0.10111069,
+          "20": 0.35536307
+        }
+      }
+    },
+    {
+      "id": "gm_008",
+      "code": "600000.SH",
+      "signal_date": "2023-06-01",
+      "side": "buy",
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "pct_chg_golden": -0.9524,
+      "judge": {
+        "tradable": true,
+        "reason": "",
+        "entry_date": "2023-06-02",
+        "entry_px": 6.23602,
+        "excess": {
+          "1": -0.00229155,
+          "5": 0.03878409,
+          "20": -0.01453226
+        },
+        "excess_net": {
+          "1": -0.00379155,
+          "5": 0.03728409,
+          "20": -0.01603226
+        }
+      }
+    }
+  ]
+}

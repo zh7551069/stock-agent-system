@@ -1,0 +1,42 @@
+{
+  "hash": "94b4614c",
+  "configHash": "a3fd7552",
+  "lockfileHash": "b1bd8b57",
+  "browserHash": "4668841e",
+  "optimized": {
+    "@vue/devtools-api": {
+      "src": "../../../../node_modules/@vue/devtools-api/dist/index.js",
+      "file": "@vue_devtools-api.js",
+      "fileHash": "3edf9520",
+      "needsInterop": false
+    },
+    "@vuepress/shared": {
+      "src": "../../../../node_modules/@vuepress/shared/dist/index.js",
+      "file": "@vuepress_shared.js",
+      "fileHash": "74b3ffbc",
+      "needsInterop": false
+    },
+    "vue-router": {
+      "src": "../../../../node_modules/vue-router/dist/vue-router.js",
+      "file": "vue-router.js",
+      "fileHash": "e6534dda",
+      "needsInterop": false
+    },
+    "vue": {
+      "src": "../../../../node_modules/vue/dist/vue.runtime.esm-bundler.js",
+      "file": "vue.js",
+      "fileHash": "15bd5e02",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "dist-I2swTR7g": {
+      "file": "dist-I2swTR7g.js",
+      "isDynamicEntry": false
+    },
+    "vue.runtime.esm-bundler-CWNVreLk": {
+      "file": "vue.runtime.esm-bundler-CWNVreLk.js",
+      "isDynamicEntry": false
+    }
+  }
+}

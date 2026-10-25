@@ -1,0 +1,31 @@
+direction: right
+title: 评测平台接入与可观测管线 {
+  near: top-center
+}
+
+agents: 13 个 Agent\n主控 + 决策面 + 平台面 {
+  style.fill: "#fff7ed"
+  style.stroke: "#ea580c"
+}
+
+bus: Trace 总线\nappend-only / 哈希链 {
+  shape: cylinder
+}
+
+collect: 采集层\nSink / 归一化 / 落库
+eval: 评测层\n过程 / 结果 / 演化
+feedback: 反馈层\n晋级 / 回滚门禁 {
+  style.fill: "#f0fdfa"
+  style.stroke: "#0d9488"
+}
+metrics: 可观测指标\nRED / 决策质量 / 过程
+platform: 平台面\nprompt / skill / 协议
+
+agents -> bus: span
+bus -> collect: 订阅
+collect -> eval
+eval -> feedback
+eval -> metrics
+feedback -> platform: 只写过程配置 {
+  style.stroke-dash: 4
+}

@@ -1,0 +1,42 @@
+direction: down
+title: 自进化链路 · 裁决面 → 归因 → 两类进化 {
+  near: top-center
+}
+
+bt: 回测判决官\n回测结论
+recon: 对账官\n对账单
+ev: 会话评估官\n过程评测
+
+attrib: 归因分析\n沿溯源图定位错误节点 {
+  shape: diamond
+}
+
+strategy: 策略进化 · 主循环\n策略师 + 因子工坊\n换因子集 / 改定义 / 调参数 / 调权重 / 改出场 {
+  style.fill: "#fff7ed"
+  style.stroke: "#ea580c"
+}
+process: 过程进化 · 辅循环\n能力管家\n改 prompt / skill / 协议 {
+  style.fill: "#eff6ff"
+  style.stroke: "#2563eb"
+}
+
+val: 回测判决官 · 影子回放 {
+  shape: diamond
+}
+gate: 三重门控\n增益 / 遗忘 / 安全 {
+  shape: diamond
+}
+up: 晋级
+roll: 回滚
+
+bt -> attrib
+recon -> attrib
+ev -> attrib
+attrib -> strategy: 因子 / 策略 / 出场
+attrib -> process: prompt / skill / 协议
+strategy -> val
+process -> gate
+val -> up: 通过
+val -> roll: 不通过
+gate -> up: 通过
+gate -> roll: 不通过

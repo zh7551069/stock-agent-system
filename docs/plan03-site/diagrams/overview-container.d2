@@ -1,0 +1,91 @@
+direction: right
+title: 容器图 · Container {
+  near: top-center
+}
+
+user: 操盘手 {
+  shape: person
+}
+
+timer: 定时器\n盘后对账 · 盘前预热 · 定时复盘 {
+  shape: queue
+  style.fill: "#fef3c7"
+  style.stroke: "#b45309"
+}
+
+trading: 股票交易策略智能体系统 {
+  style.fill: "#f8fafc"
+  style.stroke: "#475569"
+
+  commander: 主控 Commander\n意图理解 · 规划 · 整合
+
+  orch: 调度器\n运行时总调度\n路由 · 并发 · 预算 · 幂等 {
+    style.fill: "#fde68a"
+    style.stroke: "#b45309"
+  }
+
+  decision: 决策面 α {
+    style.fill: "#fff7ed"
+    style.stroke: "#ea580c"
+    strat: 策略师
+    factor: 因子工坊
+    macro: 大盘分析师
+    sentinel: 盘中哨兵
+  }
+
+  judge: 裁决面 · 判决器（隔离） {
+    style.fill: "#f0fdfa"
+    style.stroke: "#0d9488"
+    backtest: 回测判决官
+    recon: 对账官
+    evalsess: 会话评估官
+  }
+
+  platform: 平台面 {
+    style.fill: "#eff6ff"
+    style.stroke: "#2563eb"
+    data: 数据管家
+    kb: 知识馆长
+    cap: 能力管家
+    asset: 资产登记官
+  }
+
+  bus: 双总线 + 注册表 {
+    shape: cylinder
+  }
+}
+
+market: 行情数据源 {
+  shape: cylinder
+}
+eval: 外挂评测平台
+
+# ── 正向执行流（实线）──
+user -> trading.commander: 下达意图
+trading.commander -> trading.orch: 任务清单（派单）
+timer -> trading.orch: 定时任务（盘后对账 / 盘前预热）
+
+# 调度器 → 三面（面内路由到具体 agent）
+trading.orch -> trading.decision: 调度（面内路由到具体 agent）
+trading.orch -> trading.judge: 调度（只读）
+trading.orch -> trading.platform: 调度（面内路由到具体 agent）
+
+trading.platform.data -> market: 拉取 / 校验
+trading.bus -> eval: trace 流
+
+# ── 进化回路（红色虚线）──
+trading.judge.recon -> trading.decision.factor: 归因 · 换因子集/改定义/调参数 {
+  style.stroke-dash: 4
+  style.stroke: "#dc2626"
+}
+trading.judge.recon -> trading.decision.strat: 归因 · 调权重/改出场 {
+  style.stroke-dash: 4
+  style.stroke: "#dc2626"
+}
+trading.judge.evalsess -> trading.platform.cap: 改 prompt/skill {
+  style.stroke-dash: 4
+  style.stroke: "#dc2626"
+}
+eval -> trading.platform.cap: 回灌过程配置 {
+  style.stroke-dash: 4
+}

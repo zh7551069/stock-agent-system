@@ -1,0 +1,28 @@
+# ================= Python =================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+.venv-rqalpha/
+venv/
+*.egg-info/
+.eggs/
+
+# ================= Node / VuePress =================
+node_modules/
+docs/plan03-site/.vuepress/dist/
+docs/plan03-site/.vuepress/.cache/
+
+# ================= 构建产物（vendor 依赖，可从 CDN 重取）=================
+docs/build/mermaid.min.js
+
+# ================= macOS / 编辑器 =================
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# ================= 数据与规格（空目录占位；真实数据在外接盘，不入库）=================
+data/
+spec/

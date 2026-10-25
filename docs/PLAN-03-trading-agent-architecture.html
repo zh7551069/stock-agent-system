@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股票交易策略生成智能体系统 · 多 Agent 架构设计</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a22; --panel2:#1b2029; --line:#232936; --line2:#2c3443;
+    --text:#e6e9ef; --muted:#8b93a3; --faint:#5b6472;
+    --amber:#f5a623; --amber-dim:#3a2d12; --red:#e5533d;
+    --teal:#2dd4bf; --teal-dim:#0f2a26; --blue:#4f8cff; --blue-dim:#111d33;
+    --violet:#a78bfa; --violet-dim:#1c1433; --gray:#6b7280;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 28px 120px}
+  h1{font-size:30px;letter-spacing:.5px;margin:0 0 8px}
+  h2{font-size:21px;margin:52px 0 14px;padding-top:18px;border-top:1px solid var(--line)}
+  h3{font-size:16px;margin:26px 0 8px}
+  p{margin:8px 0;color:#cdd3dc}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 28px}
+  .lead{font-size:16px;color:#d7dce5}
+  .muted{color:var(--muted)} .small{font-size:13px}
+  .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;border:1px solid var(--line2);color:var(--muted);margin-right:6px;white-space:nowrap}
+  .tag.amber{color:var(--amber);border-color:var(--amber)}
+  .tag.teal{color:var(--teal);border-color:var(--teal)}
+  .tag.blue{color:var(--blue);border-color:var(--blue)}
+  .tag.violet{color:var(--violet);border-color:var(--violet)}
+  .tag.red{color:var(--red);border-color:var(--red)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:12px 0}
+  .grid{display:grid;gap:12px}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .k{color:var(--muted);font-size:12px;letter-spacing:.5px;text-transform:uppercase}
+  .princ{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--teal);border-radius:10px;padding:12px 16px}
+  .princ b{color:var(--text)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px;letter-spacing:.3px}
+  tr:last-child td{border-bottom:none}
+  td.c{color:var(--text)} td.m{color:var(--muted)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:#9fd0c8}
+  svg{width:100%;height:auto;display:block;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0 4px;font-size:12.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .callout{border-radius:10px;padding:13px 16px;margin:14px 0;font-size:14px}
+  .co-warn{background:var(--amber-dim);border:1px solid #5a4518;color:#f4d48a}
+  .co-ok{background:var(--teal-dim);border:1px solid #175046;color:#9ce8dc}
+  .co-info{background:var(--blue-dim);border:1px solid #1d3a6e;color:#bcd3ff}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+  .toc a{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--line2);border-radius:20px;padding:3px 11px}
+  .toc a:hover{color:var(--text);border-color:var(--blue)}
+  a{color:var(--blue)}
+  .foot{margin-top:60px;color:var(--faint);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>股票交易策略生成智能体系统</h1>
+<p class="sub">多 Agent 架构 · 自我进化 · 外挂评测平台 · 会话过程可观测 — 架构设计方案（PLAN-03 · v2）</p>
+
+<div class="legend">
+  <span><i style="background:var(--amber)"></i>决策面（α，产生判断/动作）</span>
+  <span><i style="background:var(--teal)"></i>裁决面（判决器，物理隔离）</span>
+  <span><i style="background:var(--blue)"></i>平台面（资产/能力/协议）</span>
+  <span><i style="background:var(--violet)"></i>外挂评测平台</span>
+  <span><i style="background:var(--gray)"></i>共享总线 / 基础设施</span>
+</div>
+
+<div class="toc">
+  <a href="#principles">① 设计原则</a><a href="#overview">② 总架构</a><a href="#roster">③ Agent 清单</a>
+  <a href="#tasks">④ 任务映射</a><a href="#models">⑤ 模型选型</a><a href="#lifecycle">⑥ 决策生命周期</a>
+  <a href="#eval">⑦ 评测平台接入</a><a href="#observability">⑧ 可观测性</a><a href="#protocol">⑨ 协议约定</a>
+  <a href="#evolution">⑩ 自我进化闭环</a><a href="#roadmap">⑪ 落地路线</a><a href="#risks">⑫ 风险与反模式</a>
+</div>
+
+<!-- ================= 1 原则 ================= -->
+<h2 id="principles">① 设计原则（先立规矩，再堆 Agent）</h2>
+<div class="grid g3">
+  <div class="princ"><b>判决器优先、物理隔离。</b>评测/回测/对账必须跑在与「策略生成」<b>不同的进程、不同的代码仓、只读</b>生产数据。生成与裁判若共享代码，会共模失效。</div>
+  <div class="princ"><b>以「日」为独立样本，不是以「笔交易」。</b>同一天的多只股票高度相关，不能用交易笔数虚增自由度；配对检验对齐日期交集，最小样本 n≥5。</div>
+  <div class="princ"><b>未经严谨考证的数据不用于决策。</b>每个字段带口径、单位、来源、复权基准；知识卡片带证据等级；校验失败即拒绝入库。</div>
+  <div class="princ"><b>决策先看机会再看风险，用概率与权重，不做"一刀否决"。</b>裁决面给的是<b>概率/权重</b>，不是二元通过。</div>
+  <div class="princ"><b>复盘永远执行，且基于事实。</b>市场已发生的结果不可质疑；被质疑的是我输出决策时的每一个动作、抓手与依据。调整若更偏离真相，<b>回滚</b>。</div>
+  <div class="princ"><b>一切过程可回放。</b>trace 贯穿四元 id，评测平台只看 trace 与结果，不看信念。</div>
+</div>
+
+<!-- ================= 2 总架构 ================= -->
+<h2 id="overview">② 总架构：主控门面 + 三面 + 双总线 + 外挂评测</h2>
+<svg viewBox="0 0 1180 760" role="img" aria-label="总体架构图">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5b6472"/></marker>
+    <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f5a623"/></marker>
+    <marker id="arrV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a78bfa"/></marker>
+  </defs>
+
+  <rect x="24" y="30" width="948" height="64" rx="14" fill="#241a08" stroke="#7a5a1a"/>
+  <text x="44" y="56" fill="#f5a623" font-size="15" font-weight="700">主控 Agent（门面）· 意图理解 / 任务规划 / 结果整合</text>
+  <text x="44" y="76" fill="#9d8a5e" font-size="12">唯一入口：听懂用户意图 → 拆解为子任务 → 派单 → 整合结果 → 追问澄清 · 模型 DeepSeek V4-Pro</text>
+
+  <rect x="24" y="110" width="300" height="330" rx="14" fill="#1a1408" stroke="#5a4518"/>
+  <text x="40" y="140" fill="#f5a623" font-size="16" font-weight="700">决策面 · α（产生判断）</text>
+  <g font-size="12">
+    <rect x="40" y="152" width="268" height="40" rx="8" fill="#241a08" stroke="#7a5a1a"/>
+    <text x="52" y="169" fill="#f4d48a" font-weight="600">调度器 Runtime Orchestrator</text><text x="52" y="184" fill="#9d8a5e" font-size="10.5">路由 / 预算 / 协议执行 / 决策包</text>
+    <rect x="40" y="198" width="268" height="40" rx="8" fill="#241a08" stroke="#7a5a1a"/>
+    <text x="52" y="215" fill="#f4d48a" font-weight="600">策略师 Strategist</text><text x="52" y="230" fill="#9d8a5e" font-size="10.5">策略生成 · 技术因子→可执行规格</text>
+    <rect x="40" y="244" width="268" height="40" rx="8" fill="#241a08" stroke="#7a5a1a"/>
+    <text x="52" y="261" fill="#f4d48a" font-weight="600">因子工坊 Factor Lab</text><text x="52" y="276" fill="#9d8a5e" font-size="10.5">因子定义 / 版本 / 口径 QC</text>
+    <rect x="40" y="290" width="268" height="40" rx="8" fill="#241a08" stroke="#7a5a1a"/>
+    <text x="52" y="307" fill="#f4d48a" font-weight="600">大盘分析师 Macro Analyst</text><text x="52" y="322" fill="#9d8a5e" font-size="10.5">盘后大势 / 板块轮动 / 消息面</text>
+    <rect x="40" y="336" width="268" height="40" rx="8" fill="#241a08" stroke="#7a5a1a"/>
+    <text x="52" y="353" fill="#f4d48a" font-weight="600">盘中哨兵 Intraday Sentinel</text><text x="52" y="368" fill="#9d8a5e" font-size="10.5">盘中监听 / 异动 / 阈值触发</text>
+    <text x="40" y="420" fill="#9d8a5e" font-size="10.5">低延迟 · 高吞吐 · 无长推理</text>
+  </g>
+
+  <rect x="348" y="110" width="300" height="330" rx="14" fill="#0d1f1c" stroke="#175046"/>
+  <text x="364" y="140" fill="#2dd4bf" font-size="16" font-weight="700">裁决面 · 判决器（物理隔离）</text>
+  <g font-size="12">
+    <rect x="364" y="152" width="268" height="40" rx="8" fill="#0f2a26" stroke="#1d6b5f"/>
+    <text x="376" y="169" fill="#9ce8dc" font-weight="600">回测判决官 Backtest Judge</text><text x="376" y="184" fill="#5f938c" font-size="10.5">回测 · 独立日超额 · 配对 vs 随机对照</text>
+    <rect x="364" y="198" width="268" height="40" rx="8" fill="#0f2a26" stroke="#1d6b5f"/>
+    <text x="376" y="215" fill="#9ce8dc" font-weight="600">对账官 Reconciler</text><text x="376" y="230" fill="#5f938c" font-size="10.5">决策对账 · T+N 复盘 · 回滚信号</text>
+    <rect x="364" y="244" width="268" height="40" rx="8" fill="#0f2a26" stroke="#1d6b5f"/>
+    <text x="376" y="261" fill="#9ce8dc" font-weight="600">会话评估官 Process Evaluator</text><text x="376" y="276" fill="#5f938c" font-size="10.5">评估会话过程 · trace 分析 · 优化建议</text>
+    <text x="364" y="320" fill="#5f938c" font-size="10.5">只读生产数据 · 只写判决库 · 独立代码仓</text>
+    <text x="364" y="336" fill="#5f938c" font-size="10.5">独立 venv / DB · 不与策略师共享模块</text>
+  </g>
+
+  <rect x="672" y="110" width="300" height="330" rx="14" fill="#0c1524" stroke="#1d3a6e"/>
+  <text x="688" y="140" fill="#4f8cff" font-size="16" font-weight="700">平台面 · 资产与能力</text>
+  <g font-size="12">
+    <rect x="688" y="152" width="268" height="40" rx="8" fill="#111d33" stroke="#27508f"/>
+    <text x="700" y="169" fill="#bcd3ff" font-weight="600">数据管家 Data Custodian</text><text x="700" y="184" fill="#6c84ad" font-size="10.5">本地 DB + 线上获取 · 口径注册 · QC</text>
+    <rect x="688" y="198" width="268" height="40" rx="8" fill="#111d33" stroke="#27508f"/>
+    <text x="700" y="215" fill="#bcd3ff" font-weight="600">知识馆长 Knowledge Curator</text><text x="700" y="230" fill="#6c84ad" font-size="10.5">知识库维护 · 证据分级 · 溯源</text>
+    <rect x="688" y="244" width="268" height="40" rx="8" fill="#111d33" stroke="#27508f"/>
+    <text x="700" y="261" fill="#bcd3ff" font-weight="600">能力管家 Capability Steward</text><text x="700" y="276" fill="#6c84ad" font-size="10.5">工具 + Skill 维护 · 版本 · 测试后晋级</text>
+    <rect x="688" y="290" width="268" height="40" rx="8" fill="#111d33" stroke="#27508f"/>
+    <text x="700" y="307" fill="#bcd3ff" font-weight="600">资产登记官 Asset Registrar</text><text x="700" y="322" fill="#6c84ad" font-size="10.5">会话过程资产 · 蒸馏入库 · 版本</text>
+  </g>
+
+  <line x1="250" y1="94" x2="250" y2="110" stroke="#f5a623" stroke-width="1.6" marker-end="url(#arrA)"/>
+  <line x1="500" y1="94" x2="500" y2="110" stroke="#f5a623" stroke-width="1.6" marker-end="url(#arrA)"/>
+  <line x1="800" y1="94" x2="800" y2="110" stroke="#f5a623" stroke-width="1.6" marker-end="url(#arrA)"/>
+
+  <rect x="24" y="462" width="180" height="44" rx="10" fill="#161a22" stroke="#2c3443"/>
+  <text x="114" y="488" fill="#cdd3dc" font-size="13" text-anchor="middle" font-weight="600">入口</text>
+  <text x="114" y="503" fill="#8b93a3" font-size="11" text-anchor="middle">用户 / 行情事件 / 定时任务</text>
+  <line x1="204" y1="484" x2="250" y2="94" stroke="#5b6472" stroke-width="1.4" marker-end="url(#arrA)"/>
+
+  <rect x="24" y="538" width="948" height="120" rx="14" fill="#12151b" stroke="#232936"/>
+  <text x="40" y="566" fill="#8b93a3" font-size="14" font-weight="700">共享基础设施 · 双总线 + 注册表</text>
+  <g font-size="12.5">
+    <rect x="40" y="578" width="216" height="58" rx="8" fill="#171b24" stroke="#2c3443"/>
+    <text x="52" y="598" fill="#cdd3dc" font-weight="600">协议总线 Protocol Bus</text><text x="52" y="615" fill="#6b7280" font-size="11">消息路由 / 幂等 / 事件回放</text><text x="52" y="628" fill="#6b7280" font-size="11">schema 校验 · 消息审计</text>
+    <rect x="272" y="578" width="216" height="58" rx="8" fill="#171b24" stroke="#2c3443"/>
+    <text x="284" y="598" fill="#cdd3dc" font-weight="600">Trace 总线（append-only）</text><text x="284" y="615" fill="#6b7280" font-size="11">span / 事件 / 哈希链不可篡改</text><text x="284" y="628" fill="#6b7280" font-size="11">四元 id 贯穿全链路</text>
+    <rect x="504" y="578" width="216" height="58" rx="8" fill="#171b24" stroke="#2c3443"/>
+    <text x="516" y="598" fill="#cdd3dc" font-weight="600">Schema 注册表</text><text x="516" y="615" fill="#6b7280" font-size="11">策略/因子/知识/工具/消息契约</text><text x="516" y="628" fill="#6b7280" font-size="11">版本化 · 机器可校验</text>
+    <rect x="736" y="578" width="216" height="58" rx="8" fill="#171b24" stroke="#2c3443"/>
+    <text x="748" y="598" fill="#cdd3dc" font-weight="600">资产仓库 Artifact Store</text><text x="748" y="615" fill="#6b7280" font-size="11">决策/对账单/复盘/蒸馏资产</text><text x="748" y="628" fill="#6b7280" font-size="11">内容寻址 · 不可变</text>
+  </g>
+
+  <rect x="996" y="110" width="160" height="330" rx="14" fill="#170f2e" stroke="#3c2a7a"/>
+  <text x="1076" y="140" fill="#a78bfa" font-size="15" font-weight="700" text-anchor="middle">外挂评测平台</text>
+  <text x="1076" y="160" fill="#7c6ab0" font-size="11" text-anchor="middle">独立进程 / 独立仓</text>
+  <g font-size="12">
+    <rect x="1012" y="174" width="128" height="50" rx="8" fill="#1c1433" stroke="#4a3496"/>
+    <text x="1076" y="194" fill="#d2c2ff" font-size="12" text-anchor="middle" font-weight="600">采集层</text><text x="1076" y="210" fill="#8575b5" font-size="10" text-anchor="middle">Trace Sink / 归一化</text>
+    <rect x="1012" y="232" width="128" height="50" rx="8" fill="#1c1433" stroke="#4a3496"/>
+    <text x="1076" y="252" fill="#d2c2ff" font-size="12" text-anchor="middle" font-weight="600">评测层</text><text x="1076" y="268" fill="#8575b5" font-size="10" text-anchor="middle">过程 / 结果 / 演化</text>
+    <rect x="1012" y="290" width="128" height="50" rx="8" fill="#1c1433" stroke="#4a3496"/>
+    <text x="1076" y="310" fill="#d2c2ff" font-size="12" text-anchor="middle" font-weight="600">反馈层</text><text x="1076" y="326" fill="#8575b5" font-size="10" text-anchor="middle">晋级 / 回滚判决</text>
+  </g>
+  <path d="M 272 578 L 272 540 L 1046 540 L 1046 440" fill="none" stroke="#a78bfa" stroke-width="1.6" marker-end="url(#arrV)"/>
+  <text x="620" y="532" fill="#a78bfa" font-size="11">trace 流</text>
+  <path d="M 1012 315 L 972 315 L 972 700 L 688 700 L 688 440" fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrV)"/>
+  <text x="830" y="692" fill="#a78bfa" font-size="11">回灌：只写过程配置（prompt/skill/协议），不写生产数据</text>
+</svg>
+
+<!-- ================= 3 Agent 清单 ================= -->
+<h2 id="roster">③ Agent 清单（共 13 个运行时 Agent）</h2>
+<p class="sub">两段式编排：<b>主控</b>做意图理解与规划，<b>调度器</b>做运行时派发。其余按「上下文不同 / 模型强度不同 / 节奏不同 / 状态所有权不同」切分。协议设计（任务 7）是<b>治理工件</b>，由调度器执行、裁决面验证，不设运行时 Agent。</p>
+<table>
+  <tr><th>#</th><th>Agent</th><th>面</th><th>核心职责</th><th>模型</th><th>节奏</th><th>写域（所有权）</th></tr>
+  <tr><td>1</td><td class="c"><b>主控</b> Commander</td><td><span class="tag amber">门面</span></td><td>意图理解、目标/任务规划、子任务分解、结果整合、向用户追问澄清</td><td class="mono">DeepSeek Pro</td><td>会话入口/按需</td><td class="m">目标与任务清单</td></tr>
+  <tr><td>2</td><td class="c"><b>调度器</b> Runtime Orchestrator</td><td><span class="tag amber">决策</span></td><td>任务路由、并发/预算分配、协议执行、幂等、组装最终决策包、触发对账</td><td class="mono">DeepSeek Flash</td><td>事件驱动</td><td class="m">任务队列、决策包</td></tr>
+  <tr><td>3</td><td class="c"><b>策略师</b> Strategist</td><td><span class="tag amber">决策</span></td><td>策略生成：因子假设 → 信号/进出场/仓位/风控门，产出机器可读 proposal（非自由文本）</td><td class="mono">起草 Flash · 定稿 Pro</td><td>盘后为主</td><td class="m">策略 proposal（草稿态）</td></tr>
+  <tr><td>4</td><td class="c"><b>因子工坊</b> Factor Lab</td><td><span class="tag amber">决策</span></td><td>技术因子定义/注册/版本、口径与来源绑定、因子 QC</td><td class="mono">Flash</td><td>盘后</td><td class="m">因子字典（Schema 注册表）</td></tr>
+  <tr><td>5</td><td class="c"><b>大盘分析师</b> Macro Analyst</td><td><span class="tag amber">决策</span></td><td>大盘大势、板块/题材轮动、消息面机会（大盘分析）</td><td class="mono">DeepSeek Pro</td><td>盘后日频</td><td class="m">大势研判、板块机会清单</td></tr>
+  <tr><td>6</td><td class="c"><b>盘中哨兵</b> Intraday Sentinel</td><td><span class="tag amber">决策</span></td><td>盘中监听：涨跌停/异动/信号触发/风控阈值，触发即发事件</td><td class="mono">Flash</td><td>盘中实时</td><td class="m">事件流（只发不落库）</td></tr>
+  <tr><td>7</td><td class="c"><b>回测判决官</b> Backtest Judge</td><td><span class="tag teal">裁决</span></td><td>策略回测：独立日超额、配对 vs 同天随机对照、分层切片；harness 是确定性代码，Agent 只解读</td><td class="mono">代码 + Flash 解读</td><td>按需</td><td class="m">判决库（只读生产）</td></tr>
+  <tr><td>8</td><td class="c"><b>对账官</b> Reconciler</td><td><span class="tag teal">裁决</span></td><td>决策对账：决策 vs 实际 T+N 结果，逐条复盘抓手/依据，产出对账单 + 回滚信号</td><td class="mono">DeepSeek Pro</td><td>T+N 收盘后</td><td class="m">对账单、回滚建议</td></tr>
+  <tr><td>9</td><td class="c"><b>会话评估官</b> Process Evaluator</td><td><span class="tag teal">裁决</span></td><td>评估会话过程：trace 分析推理质量/工具效率/协议合规/成本，给过程优化建议</td><td class="mono">Pro + GLM 异源</td><td>异步批处理</td><td class="m">过程评测报告（只读 trace）</td></tr>
+  <tr><td>10</td><td class="c"><b>数据管家</b> Data Custodian</td><td><span class="tag blue">平台</span></td><td>数据维护：本地 duckdb + 线上获取（akshare/tushare/东财），口径/单位/复权一致性，QC 门禁</td><td class="mono">Flash + 确定性代码</td><td>盘后/按需</td><td class="m">数据库、口径注册表</td></tr>
+  <tr><td>11</td><td class="c"><b>知识馆长</b> Knowledge Curator</td><td><span class="tag blue">平台</span></td><td>知识库维护：2238 卡片去重/溯源/证据分级，剥离不可验证内容，争议用异源裁定</td><td class="mono">Flash + Pro 裁定 + GLM</td><td>异步</td><td class="m">知识库、证据索引</td></tr>
+  <tr><td>12</td><td class="c"><b>能力管家</b> Capability Steward</td><td><span class="tag blue">平台</span></td><td>工具 + Skill 维护：注册/版本/契约测试，测试通过才晋级生产</td><td class="mono">Flash</td><td>按需</td><td class="m">工具/Skill 注册表</td></tr>
+  <tr><td>13</td><td class="c"><b>资产登记官</b> Asset Registrar</td><td><span class="tag blue">平台</span></td><td>会话过程资产维护：把会话蒸馏成决策/理由/结果/教训的结构化资产，供对账与复盘</td><td class="mono">Pro 蒸馏 + Flash 例行</td><td>会话结束/异步</td><td class="m">过程资产库（内容寻址）</td></tr>
+</table>
+
+<!-- ================= 4 任务映射 ================= -->
+<h2 id="tasks">④ 14 项任务 → Agent 映射</h2>
+<p class="sub">主控负责「入口·意图理解·规划·整合」这条元任务（不在 14 条内，但它是所有任务的起点）。</p>
+<table>
+  <tr><th>任务</th><th>主责 Agent</th><th>协作</th><th>面</th></tr>
+  <tr><td>0 意图理解/规划/整合</td><td class="c">主控</td><td class="m">调度器（执行）、各 agent（供结果）</td><td><span class="tag amber">门面</span></td></tr>
+  <tr><td>1 策略生成（技术因子）</td><td class="c">策略师</td><td class="m">因子工坊（供因子）、回测判决官（验证）</td><td><span class="tag amber">决策</span></td></tr>
+  <tr><td>2 知识库维护</td><td class="c">知识馆长</td><td class="m">资产登记官（入库格式）</td><td><span class="tag blue">平台</span></td></tr>
+  <tr><td>3 数据维护（本地+线上）</td><td class="c">数据管家</td><td class="m">回测判决官（数据口径断言）</td><td><span class="tag blue">平台</span></td></tr>
+  <tr><td>4 工具 TOOLS 维护</td><td class="c">能力管家</td><td class="m">调度器（调用契约）</td><td><span class="tag blue">平台</span></td></tr>
+  <tr><td>5 会话过程资产维护</td><td class="c">资产登记官</td><td class="m">会话评估官（质量信号）</td><td><span class="tag blue">平台</span></td></tr>
+  <tr><td>6 决策对账</td><td class="c">对账官</td><td class="m">资产登记官（读资产）、调度器（收信号）</td><td><span class="tag teal">裁决</span></td></tr>
+  <tr><td>7 多 agent 交互协议约定</td><td class="c">协议注册表（治理工件）</td><td class="m">调度器执行 · 对账/评估官验证 · 版本化</td><td><span class="tag" style="color:#8b93a3;border-color:#8b93a3">治理</span></td></tr>
+  <tr><td>8 因子维护</td><td class="c">因子工坊</td><td class="m">数据管家（口径）、回测判决官（有效性）</td><td><span class="tag amber">决策</span></td></tr>
+  <tr><td>9 评估会话过程</td><td class="c">会话评估官</td><td class="m">评测平台（过程指标）、资产登记官</td><td><span class="tag teal">裁决</span></td></tr>
+  <tr><td>10 策略回测</td><td class="c">回测判决官</td><td class="m">数据管家（供数）、策略师（收结论）</td><td><span class="tag teal">裁决</span></td></tr>
+  <tr><td>11 大盘分析</td><td class="c">大盘分析师</td><td class="m">知识馆长（规则/历史）、数据管家</td><td><span class="tag amber">决策</span></td></tr>
+  <tr><td>12 盘中监听</td><td class="c">盘中哨兵</td><td class="m">调度器（触发动作）、Trace 总线</td><td><span class="tag amber">决策</span></td></tr>
+  <tr><td>13 trace 会话追踪</td><td class="c">评测平台·采集层（代码）</td><td class="m">会话评估官（分析）、Trace 总线（存储）</td><td><span class="tag violet">评测</span></td></tr>
+  <tr><td>14 skill 维护</td><td class="c">能力管家</td><td class="m">会话评估官（skill 效果回执）</td><td><span class="tag blue">平台</span></td></tr>
+</table>
+
+<!-- ================= 5 模型选型 ================= -->
+<h2 id="models">⑤ 模型选型（DeepSeek + 智谱）</h2>
+<p class="sub">原则：<b>高频/例行/延迟敏感 → Flash；质量优先/深推理/意图规划 → Pro；异源交叉校验与降级冗余 → 智谱 GLM。</b></p>
+<table>
+  <tr><th>模型</th><th>用在哪</th><th>为什么</th></tr>
+  <tr><td class="c mono">DeepSeek V4.1-Flash</td><td class="m">调度器、因子工坊、盘中哨兵、数据管家、能力管家、回测解读</td><td>便宜 3–4 倍、并发 2500、输出短、支持视觉（读图表/截图）</td></tr>
+  <tr><td class="c mono">DeepSeek V4-Pro</td><td class="m">主控（意图/规划/整合）、策略师（定稿）、大盘分析师、对账官、会话评估官、资产蒸馏</td><td>更强 agentic 编码与难推理，质量优先；无视觉，喂文本/结构化数据</td></tr>
+  <tr><td class="c mono">智谱 GLM-5.3-flash / flashx</td><td class="m">因子解读批量、数据 QC 第二遍、盘中哨兵降级冗余</td><td>高吞吐低成本，DeepSeek 限流/故障时兜底</td></tr>
+  <tr><td class="c mono">智谱 GLM-5.3</td><td class="m">会话评估官、知识馆长的<b>异源第二意见</b></td><td>两家厂商交叉校验结论，降低"同一模型家族共同错误"</td></tr>
+</table>
+<div class="callout co-info">⚠️ 模型版本号按你本地网关目录里实际可用的为准（GLM 名称取自你 gateway 的模型清单）。选型是<b>占位建议</b>，正式定版前用同一批任务对 Flash/Pro/GLM 做一次配对 A/B，以实测差距为准，不以宣称的 benchmark 为准。</div>
+
+<!-- ================= 6 决策生命周期 ================= -->
+<h2 id="lifecycle">⑥ 决策生命周期（主控规划 → 回测验证 → 对账回滚）</h2>
+<svg viewBox="0 0 1180 580" role="img" aria-label="决策生命周期时序图">
+  <defs>
+    <marker id="sarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5b6472"/></marker>
+  </defs>
+  <g font-size="12" text-anchor="middle">
+    <text x="70" y="44" fill="#f4d48a" font-weight="600">盘中哨兵</text>
+    <text x="240" y="44" fill="#f5a623" font-weight="600">主控</text>
+    <text x="410" y="44" fill="#f4d48a" font-weight="600">调度器·策略师</text>
+    <text x="600" y="44" fill="#9ce8dc" font-weight="600">回测判决官</text>
+    <text x="790" y="44" fill="#9ce8dc" font-weight="600">对账官</text>
+    <text x="970" y="44" fill="#bcd3ff" font-weight="600">资产登记官</text>
+    <text x="1120" y="44" fill="#d2c2ff" font-weight="600">会话评估官</text>
+  </g>
+  <g stroke="#2c3443">
+    <line x1="70" y1="60" x2="70" y2="540"/><line x1="240" y1="60" x2="240" y2="540"/>
+    <line x1="410" y1="60" x2="410" y2="540"/><line x1="600" y1="60" x2="600" y2="540"/>
+    <line x1="790" y1="60" x2="790" y2="540"/><line x1="970" y1="60" x2="970" y2="540"/>
+    <line x1="1120" y1="60" x2="1120" y2="540"/>
+  </g>
+  <g font-size="12" fill="#cdd3dc">
+    <line x1="70" y1="90" x2="240" y2="90" stroke="#5b6472" stroke-width="1.5" marker-end="url(#sarr)"/>
+    <text x="150" y="84" text-anchor="middle" fill="#8b93a3" font-size="11">1 异动/信号触发事件</text>
+    <line x1="240" y1="116" x2="240" y2="150" stroke="#5b6472" stroke-width="1.5"/>
+    <text x="240" y="168" text-anchor="middle" fill="#8b93a3" font-size="11">2 理解意图→规划→派单</text>
+    <line x1="240" y1="190" x2="410" y2="190" stroke="#5b6472" stroke-width="1.5" marker-end="url(#sarr)"/>
+    <text x="325" y="184" text-anchor="middle" fill="#8b93a3" font-size="11">3 生成策略 proposal</text>
+    <line x1="410" y1="214" x2="410" y2="248" stroke="#5b6472" stroke-width="1.5"/>
+    <text x="410" y="266" text-anchor="middle" fill="#8b93a3" font-size="11">4 起草(Flash)→定稿(Pro)</text>
+    <line x1="410" y1="290" x2="600" y2="290" stroke="#5b6472" stroke-width="1.5" marker-end="url(#sarr)"/>
+    <text x="505" y="284" text-anchor="middle" fill="#8b93a3" font-size="11">5 proposal（机器可读）</text>
+    <line x1="600" y1="314" x2="600" y2="348" stroke="#5b6472" stroke-width="1.5"/>
+    <text x="600" y="366" text-anchor="middle" fill="#8b93a3" font-size="11">6 回放验证：独立日超额/配对</text>
+    <line x1="600" y1="390" x2="410" y2="390" stroke="#e5533d" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#sarr)"/>
+    <text x="505" y="384" text-anchor="middle" fill="#e5533d" font-size="11">7 不通过→打回（带证据）</text>
+    <line x1="600" y1="416" x2="240" y2="416" stroke="#2dd4bf" stroke-width="1.6" marker-end="url(#sarr)"/>
+    <text x="420" y="410" text-anchor="middle" fill="#2dd4bf" font-size="11">8 通过：超额+概率+分层结论</text>
+    <line x1="240" y1="440" x2="240" y2="474" stroke="#5b6472" stroke-width="1.5"/>
+    <text x="240" y="492" text-anchor="middle" fill="#8b93a3" font-size="11">9 整合→组装决策包（仓位/风控）</text>
+    <line x1="240" y1="512" x2="790" y2="512" stroke="#5b6472" stroke-width="1.5" marker-end="url(#sarr)"/>
+    <text x="515" y="506" text-anchor="middle" fill="#8b93a3" font-size="11">10 T+N 收盘：决策包+实际成交 → 对账</text>
+  </g>
+  <path d="M 240 512 C 420 540 700 540 970 512" fill="none" stroke="#a78bfa" stroke-width="1.3" stroke-dasharray="4 4" marker-end="url(#sarr)"/>
+  <text x="700" y="556" text-anchor="middle" fill="#a78bfa" font-size="11">全程 trace + 蒸馏 → 过程资产 → 会话评估</text>
+</svg>
+
+<!-- ================= 7 评测平台接入 ================= -->
+<h2 id="eval">⑦ 评测平台怎么接入（保证会话过程可观测）</h2>
+<div class="grid g3">
+  <div class="card">
+    <div class="k">接入方式</div>
+    <p class="small m">评测平台是<b>独立进程/独立代码仓/独立 DB</b>，通过 Trace 总线以<b>推送式 sink</b>接入：每个 Agent 回合产出 OTLP 风格 span，写入 append-only 总线，平台采集层订阅归一化。平台对生产<b>只读</b>，写回只经"反馈层"，且只落到<b>过程配置仓</b>（prompt/skill/协议），绝不写生产数据与生产库。</p>
+  </div>
+  <div class="card">
+    <div class="k">三层结构</div>
+    <p class="small m"><b>采集层</b> Trace Sink/归一化/哈希链；<b>评测层</b> 过程评测（推理质量、工具效率、协议合规、延迟、token 成本）+ 结果评测（决策对账、超额、配对）+ 演化评测（新旧版本 A/B）；<b>反馈层</b> 晋级/回滚判决，回归门禁。</p>
+  </div>
+  <div class="card">
+    <div class="k">四元 id 贯穿</div>
+    <p class="small m mono">session_id → decision_id → strategy_id → factor_id</p>
+    <p class="small m">一条决策从"盘中触发"到"T+N 对账"到"复盘回滚"全链路用同一串 id 串起来，评测平台可任意回放任意环节。</p>
+  </div>
+</div>
+<svg viewBox="0 0 1180 400" role="img" aria-label="评测平台接入与可观测管线">
+  <defs>
+    <marker id="oarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a78bfa"/></marker>
+  </defs>
+  <g font-size="12.5">
+    <rect x="20" y="40" width="300" height="120" rx="10" fill="#1a1408" stroke="#5a4518"/>
+    <text x="36" y="66" fill="#f4d48a" font-weight="600">Agent 回合（生产）</text>
+    <text x="36" y="88" fill="#9d8a5e" font-size="11">主控 + 决策面 + 平台面 13 个 Agent</text>
+    <text x="36" y="106" fill="#9d8a5e" font-size="11">每次推理/工具调用/消息都发 span</text>
+    <text x="36" y="124" fill="#9d8a5e" font-size="11">采样：盘中 100% · 盘后批量降采样</text>
+    <rect x="360" y="40" width="220" height="120" rx="10" fill="#12151b" stroke="#232936"/>
+    <text x="376" y="66" fill="#cdd3dc" font-weight="600">Trace 总线</text>
+    <text x="376" y="88" fill="#6b7280" font-size="11">append-only · 不可篡改</text>
+    <text x="376" y="106" fill="#6b7280" font-size="11">哈希链校验和</text>
+    <text x="376" y="124" fill="#6b7280" font-size="11">事件幂等 + 时间戳</text>
+    <line x1="320" y1="100" x2="360" y2="100" stroke="#a78bfa" stroke-width="1.6" marker-end="url(#oarr)"/>
+    <rect x="620" y="20" width="300" height="160" rx="10" fill="#170f2e" stroke="#3c2a7a"/>
+    <text x="636" y="46" fill="#d2c2ff" font-weight="600">评测平台（隔离）</text>
+    <rect x="636" y="56" width="268" height="34" rx="7" fill="#1c1433" stroke="#4a3496"/>
+    <text x="648" y="78" fill="#d2c2ff" font-size="11">采集层：Sink / 归一化 / 落库</text>
+    <rect x="636" y="96" width="268" height="72" rx="7" fill="#1c1433" stroke="#4a3496"/>
+    <text x="648" y="116" fill="#d2c2ff" font-size="11">评测层</text>
+    <text x="648" y="134" fill="#8575b5" font-size="11">过程：推理质量 / 工具效率 / 协议合规</text>
+    <text x="648" y="150" fill="#8575b5" font-size="11">结果：对账 / 超额 / 配对 · 演化：A/B</text>
+    <line x1="580" y1="100" x2="620" y2="100" stroke="#a78bfa" stroke-width="1.6" marker-end="url(#oarr)"/>
+    <rect x="620" y="200" width="300" height="130" rx="10" fill="#12151b" stroke="#232936"/>
+    <text x="636" y="226" fill="#cdd3dc" font-weight="600">可观测指标</text>
+    <text x="636" y="248" fill="#6b7280" font-size="11">RED：请求量 / 错误率 / 延迟</text>
+    <text x="636" y="266" fill="#6b7280" font-size="11">决策质量：胜率 / 超额 / tstat / 回撤</text>
+    <text x="636" y="284" fill="#6b7280" font-size="11">过程：工具成功率 / 重试 / 协议违约 / token</text>
+    <text x="636" y="302" fill="#6b7280" font-size="11">趋势看板：按 agent / 模型 / 策略切片</text>
+    <rect x="960" y="20" width="200" height="120" rx="10" fill="#0d1f1c" stroke="#175046"/>
+    <text x="976" y="46" fill="#9ce8dc" font-weight="600">反馈层（门禁）</text>
+    <text x="976" y="68" fill="#5f938c" font-size="11">晋级：新版本更接近真相</text>
+    <text x="976" y="86" fill="#5f938c" font-size="11">回滚：更差 → 回到上一版</text>
+    <text x="976" y="104" fill="#5f938c" font-size="11">只写过程配置仓，不写生产</text>
+    <line x1="920" y1="80" x2="960" y2="80" stroke="#a78bfa" stroke-width="1.6" marker-end="url(#oarr)"/>
+    <path d="M 1060 140 L 1060 360 L 470 360 L 470 160" fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#oarr)"/>
+    <text x="760" y="352" fill="#a78bfa" font-size="11">回灌：prompt / skill / 协议版本 → 平台面（能力管家、协议注册表）</text>
+  </g>
+</svg>
+
+<!-- ================= 8 可观测性 ================= -->
+<h2 id="observability">⑧ 可观测性：怎么保证"看得见、可回放、可质疑"</h2>
+<div class="grid g4">
+  <div class="card"><div class="k">全链路 span</div><p class="small m">每个回合 = 一个 span；子步骤（推理块、工具调用、子代理）挂成子 span；span 带四元 id、模型名、prompt 版本、skill 版本、token、延迟、错误。</p></div>
+  <div class="card"><div class="k">不可篡改</div><p class="small m">trace 总线 append-only，每条事件带哈希链；评测平台落库时校验，防止"事后改过程"——复盘只能基于原始 trace。</p></div>
+  <div class="card"><div class="k">结果不可质疑</div><p class="small m">对账用<b>实际成交与行情</b>（前复权、涨跌停、T+1、成本口径），结果定了就是定了；被质疑的是决策时的动作与依据。</p></div>
+  <div class="card"><div class="k">回归门禁</div><p class="small m">任何过程优化（改 prompt/skill/协议）都要先跑"影子回放"：用历史 trace 重放，配对检验新旧结果，只有更接近真相才晋级，否则回滚。</p></div>
+</div>
+
+<!-- ================= 9 协议约定 ================= -->
+<h2 id="protocol">⑨ 多 Agent 交互协议约定（任务 7）</h2>
+<p class="sub">协议是<b>版本化治理工件</b>，不是某个 Agent 每次临场决定的东西。设计一次、机器校验、违规即告警。</p>
+<table>
+  <tr><th>协议层</th><th>内容</th><th>校验方</th></tr>
+  <tr><td class="c"><b>消息信封</b></td><td class="m">每条消息：四元 id + 来源 agent + 目标 agent + 消息类型 + schema 版本 + 时间戳 + 幂等键</td><td class="m">协议总线（进总线即校验）</td></tr>
+  <tr><td class="c"><b>消息类型</b></td><td class="m">事件 / 命令 / 请求-响应 / 发布-订阅，各带优先级与超时</td><td class="m">调度器</td></tr>
+  <tr><td class="c"><b>决策包契约</b></td><td class="m">策略 proposal 与决策包是<b>机器可读 JSON Schema</b>：信号、进场、出场、仓位、风控门、每个抓手/依据的引用（因子 id / 数据口径 / 知识卡片 id）</td><td class="m">回测判决官 + 对账官</td></tr>
+  <tr><td class="c"><b>数据口径契约</b></td><td class="m">复权基准、单位、日期格式、涨跌停、T+1、板块归属，全部带 id 与版本</td><td class="m">数据管家</td></tr>
+  <tr><td class="c"><b>写域隔离</b></td><td class="m">每个 Agent 只能写自己的状态；裁决面只读生产；评测平台只写过程配置仓</td><td class="m">协议总线（ACL）</td></tr>
+  <tr><td class="c"><b>异步/同步</b></td><td class="m">盘中路径同步低延迟（哨兵→主控→调度→执行）；盘后/回测/对账/评估走异步队列</td><td class="m">调度器（预算与限流）</td></tr>
+</table>
+
+<!-- ================= 10 自我进化 ================= -->
+<h2 id="evolution">⑩ 自我进化闭环</h2>
+<svg viewBox="0 0 1180 360" role="img" aria-label="自我进化闭环">
+  <defs>
+    <marker id="earr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2dd4bf"/></marker>
+  </defs>
+  <g font-size="13">
+    <rect x="40" y="120" width="230" height="90" rx="12" fill="#1a1408" stroke="#5a4518"/>
+    <text x="155" y="155" fill="#f4d48a" font-weight="600" text-anchor="middle">运行</text>
+    <text x="155" y="175" fill="#9d8a5e" font-size="11" text-anchor="middle">主控 + 各 Agent 产生决策与动作</text>
+    <text x="155" y="192" fill="#9d8a5e" font-size="11" text-anchor="middle">全程写 trace</text>
+    <rect x="360" y="120" width="230" height="90" rx="12" fill="#12151b" stroke="#232936"/>
+    <text x="475" y="155" fill="#cdd3dc" font-weight="600" text-anchor="middle">观测</text>
+    <text x="475" y="175" fill="#6b7280" font-size="11" text-anchor="middle">Trace 总线 + 过程资产</text>
+    <text x="475" y="192" fill="#6b7280" font-size="11" text-anchor="middle">不可篡改、可回放</text>
+    <rect x="680" y="120" width="230" height="90" rx="12" fill="#170f2e" stroke="#3c2a7a"/>
+    <text x="795" y="155" fill="#d2c2ff" font-weight="600" text-anchor="middle">评测</text>
+    <text x="795" y="175" fill="#8575b5" font-size="11" text-anchor="middle">过程 / 结果 / 演化三层</text>
+    <text x="795" y="192" fill="#8575b5" font-size="11" text-anchor="middle">事实 + 概率 + 分层</text>
+    <rect x="680" y="240" width="230" height="90" rx="12" fill="#0d1f1c" stroke="#175046"/>
+    <text x="795" y="275" fill="#9ce8dc" font-weight="600" text-anchor="middle">判决</text>
+    <text x="795" y="295" fill="#5f938c" font-size="11" text-anchor="middle">晋级（更近真相）</text>
+    <text x="795" y="312" fill="#5f938c" font-size="11" text-anchor="middle">否则回滚到上一版</text>
+    <rect x="40" y="240" width="230" height="90" rx="12" fill="#0c1524" stroke="#1d3a6e"/>
+    <text x="155" y="275" fill="#bcd3ff" font-weight="600" text-anchor="middle">修正</text>
+    <text x="155" y="295" fill="#6c84ad" font-size="11" text-anchor="middle">改 prompt / skill / 协议 / 因子</text>
+    <text x="155" y="312" fill="#6c84ad" font-size="11" text-anchor="middle">影子回放验证后再上线</text>
+    <line x1="270" y1="165" x2="360" y2="165" stroke="#2dd4bf" stroke-width="1.8" marker-end="url(#earr)"/>
+    <line x1="590" y1="165" x2="680" y2="165" stroke="#2dd4bf" stroke-width="1.8" marker-end="url(#earr)"/>
+    <line x1="795" y1="210" x2="795" y2="240" stroke="#2dd4bf" stroke-width="1.8" marker-end="url(#earr)"/>
+    <path d="M 680 285 L 270 285" fill="none" stroke="#2dd4bf" stroke-width="1.8" marker-end="url(#earr)"/>
+    <line x1="155" y1="240" x2="155" y2="210" stroke="#2dd4bf" stroke-width="1.8" marker-end="url(#earr)"/>
+    <text x="155" y="205" fill="#2dd4bf" font-size="11" text-anchor="middle">上线</text>
+  </g>
+</svg>
+
+<!-- ================= 11 路线图 ================= -->
+<h2 id="roadmap">⑪ 落地路线（先判决器，后决策面）</h2>
+<table>
+  <tr><th>阶段</th><th>做什么</th><th>完成判据</th></tr>
+  <tr><td class="c"><b>P0 判决器</b></td><td class="m">回测判决官 + 对账官 + 数据口径契约 + Trace 总线。先把"怎么算对"立起来。</td><td class="m">oracle 测试能识别正 alpha；独立日 ≥30；配对检验可用</td></tr>
+  <tr><td class="c"><b>P1 资产</b></td><td class="m">数据管家、知识馆长（2238 卡片证据分级）、能力管家、协议注册表。</td><td class="m">字段口径注册率 100%；知识卡带证据等级；未考证数据拒入</td></tr>
+  <tr><td class="c"><b>P2 决策面 + 主控</b></td><td class="m">主控、调度器、策略师、因子工坊、大盘分析师、盘中哨兵。</td><td class="m">主控规划可落地；策略 proposal 可被判决官直接消费</td></tr>
+  <tr><td class="c"><b>P3 评测平台</b></td><td class="m">采集/评测/反馈三层 + 过程资产 + 会话评估官 + 影子回放门禁。</td><td class="m">任意决策可回放；A/B 回归门禁生效</td></tr>
+  <tr><td class="c"><b>P4 自我进化</b></td><td class="m">全链路闭环：trace→分析→优化→回放验证→晋级/回滚。</td><td class="m">过程变更皆有证据，更差自动回滚</td></tr>
+</table>
+
+<!-- ================= 12 风险 ================= -->
+<h2 id="risks">⑫ 风险与反模式（来自已踩过的坑）</h2>
+<div class="grid g3">
+  <div class="princ"><b>判决器与选手共模。</b>评测和生成共用数据/代码/假设 → "测试全过但决策没用"。→ 物理隔离 + 只读 + 独立样本定义。</div>
+  <div class="princ"><b>用交易笔数当样本。</b>同日股票相关，自由度虚高，t 值假显著。→ 以日为样本，配对对齐日期。</div>
+  <div class="princ"><b>未剔 beta 就报超额。</b>把 beta 当 alpha。→ 超额对沪深300剔 beta；并配同天随机对照。</div>
+  <div class="princ"><b>数据口径漂移。</b>前复权 vs 涨跌停价、元/万元、东财 vs 同花顺混用。→ 口径契约 + QC 门禁。</div>
+  <div class="princ"><b>为一点风险否决全部 / 为一点机会否决卖出。</b>→ 概率权重判断，判决器输出概率而非二元。</div>
+  <div class="princ"><b>主控越权直接写生产。</b>主控只规划整合，不落库、不写判决库；写域由协议总线 ACL 强约束。</div>
+</div>
+
+<div class="foot">
+  PLAN-03 · v2 · 生成于 2026-10-23 · 仅架构设计，未含可执行代码。模型选型与 GLM 版本为占位建议，正式定版前需实测 A/B 校准。<br>
+  两段式编排：主控（意图/规划）+ 调度器（运行时）；判决器先行：P0 没立起来之前，任何"策略生成"都只是在重放旧错误。
+</div>
+
+</div>
+</body>
+</html>

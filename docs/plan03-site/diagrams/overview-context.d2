@@ -1,0 +1,27 @@
+direction: right
+title: 系统上下文图 · System Context {
+  near: top-center
+}
+
+user: 操盘手\n下达意图 · 审阅决策 {
+  shape: person
+}
+
+trading: 股票交易策略智能体系统\n多 Agent · 策略生成 / 回测 / 对账 / 自进化 {
+  style.fill: "#f1f5f9"
+  style.stroke: "#334155"
+}
+
+market: 行情数据源\n东财 · 同花顺 · tushare · akshare · 本地 duckdb {
+  shape: cylinder
+}
+
+eval: 外挂评测平台\n采集 · 评测 · 反馈（对生产只读） {
+  style.fill: "#f5f3ff"
+  style.stroke: "#7e22ce"
+}
+
+user -> trading: 下达意图
+trading -> market: 拉取 / 校验行情
+trading -> eval: 上报 trace / 决策对账
+eval -> trading: 回灌过程配置（prompt / skill / 协议）

@@ -1,0 +1,71 @@
+{
+ "start": "2026-08-01",
+ "end": "2026-08-25",
+ "n_days": 0,
+ "horizons": [
+  1,
+  3,
+  5,
+  20
+ ],
+ "by_horizon": {
+  "1": {
+   "treat": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "ctrl": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "paired_diff": null,
+   "paired_t": null
+  },
+  "3": {
+   "treat": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "ctrl": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "paired_diff": null,
+   "paired_t": null
+  },
+  "5": {
+   "treat": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "ctrl": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "paired_diff": null,
+   "paired_t": null
+  },
+  "20": {
+   "treat": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "ctrl": {
+    "mean_excess": null,
+    "t": null,
+    "n_days": 0
+   },
+   "paired_diff": null,
+   "paired_t": null
+  }
+ },
+ "per_day": [],
+ "by_year": {}
+}

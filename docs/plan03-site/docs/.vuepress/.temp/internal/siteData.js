@@ -1,0 +1,1 @@
+export const siteData = JSON.parse("{\"base\":\"/\",\"lang\":\"zh-CN\",\"title\":\"PLAN-03 · 交易策略多 Agent 架构\",\"description\":\"股票交易策略生成智能体系统 · 多 Agent 架构设计\",\"head\":[[\"meta\",{\"name\":\"color-scheme\",\"content\":\"light dark\"}]],\"locales\":{\"/\":{\"lang\":\"zh-CN\",\"title\":\"PLAN-03 · 交易策略多 Agent 架构\",\"description\":\"股票交易策略生成智能体系统 · 多 Agent 架构设计\"}}}")
