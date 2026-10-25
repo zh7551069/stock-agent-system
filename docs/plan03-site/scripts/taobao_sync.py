@@ -10,7 +10,8 @@ v3 更新: ① 按「表头签名」识别 CSV 类型（修第 7 地雷：文件
 依据: 数据口径契约 v1（caliber-contract.md）
 用法: python3 taobao_sync.py --dry-run | --qc | （默认同步）
 """
-import os, re, io, glob, datetime, csv
+import os, re, io, glob, datetime, csv, zipfile, random, json
+import urllib.request
 import duckdb
 
 CALIBER = {"adjust": "前复权", "cost_rate": 0.0015, "code_format": "sz000001",
@@ -162,41 +163,151 @@ def _apply_map(row, colmap):
         else: out[tgt] = row[src]
     return out
 
-def sync(download_dir, db_path, dry_run=False):
+# ── 文件扫描：csv + zip（非递归，跳过 ._ 前缀 macOS 元数据）──
+def _iter_files(download_dir):
+    for f in sorted(glob.glob(os.path.join(download_dir, "*"))):
+        name = os.path.basename(f)
+        if name.startswith("._"):
+            continue
+        if name.endswith(".csv"):
+            yield (f, False)
+        elif name.endswith(".zip"):
+            yield (f, True)
+
+
+def _open_csv_streams(path, is_zip):
+    """csv 返回自身一个流；zip 返回内部所有 csv 的文本流（读入内存，避免文件生命周期）。"""
+    if not is_zip:
+        yield (os.path.basename(path), open(path, encoding="utf-8-sig"))
+    else:
+        with zipfile.ZipFile(path) as zf:
+            for inner in zf.namelist():
+                base = inner.split("/")[-1]
+                if base.endswith(".csv") and not base.startswith("._"):
+                    yield (base, io.StringIO(zf.read(inner).decode("utf-8-sig")))
+
+
+# ── 线上抽样验证：腾讯不复权日 K 算涨跌幅，与库内 pct_chg 比对（复权无关，可精确比对）──
+def _tencent_pct(code, date):
+    sym = code  # 腾讯 sym 即 sz000001 前缀式，与库内 daily.code 一致
+    d = date if isinstance(date, datetime.date) else datetime.datetime.strptime(str(date), "%Y-%m-%d").date()
+    start = (d - datetime.timedelta(days=8)).strftime("%Y-%m-%d")
+    end = (d + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={sym},day,{start},{end},20,"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    raw = urllib.request.urlopen(req, timeout=10).read().decode("utf-8", errors="ignore")
+    node = json.loads(raw)["data"][sym]
+    key = "day" if "day" in node else "qfqday"
+    closes = {r[0]: float(r[2]) for r in node[key]}
+    dates = sorted(closes)
+    ds = d.strftime("%Y-%m-%d")
+    if ds not in dates:
+        return None
+    i = dates.index(ds)
+    if i <= 0:
+        return None
+    return (closes[dates[i]] - closes[dates[i - 1]]) / closes[dates[i - 1]] * 100
+
+
+def verify_online(con, n=5, tol=0.05):
+    """从 daily 抽 n 条，腾讯源比对 pct_chg。返回 (ok, 详情)。"""
+    rows = con.execute(
+        "SELECT code, date, pct_chg FROM daily "
+        "WHERE pct_chg IS NOT NULL AND date >= DATE '2024-01-01' "
+        "ORDER BY date DESC LIMIT 5000").fetchall()
+    if not rows:
+        return True, "daily 无数据可验证"
+    rng = random.Random(42)
+    sample = rng.sample(rows, min(n, len(rows)))
+    bad, checked = [], 0
+    for code, date, pct in sample:
+        tp = _tencent_pct(code, date)
+        if tp is None:
+            continue
+        checked += 1
+        if abs(pct - tp) > tol:
+            bad.append(f"{code}@{date}: 库={pct:.3f}% 线上={tp:.3f}%")
+    ok = (checked > 0 and len(bad) == 0)
+    detail = f"抽样 {len(sample)} 条 / 比对 {checked} 条 / 超差 {len(bad)} 条"
+    if bad:
+        detail += "；" + "；".join(bad[:3])
+    return ok, detail
+
+
+def qc_all_pass(qc):
+    """QC 断言全过（违规计数全为 0）。"""
+    return all(v == 0 for v in qc.values())
+
+
+def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
     con = duckdb.connect(db_path)
     imported, unknown = {}, []
-    for f in sorted(glob.glob(os.path.join(download_dir, "*.csv"))):
+    removable = []  # 完全识别 + 有导入的文件，验证通过后可删除
+    for f, is_zip in _iter_files(download_dir):
         name = os.path.basename(f)
-        if name.startswith('._'): continue
-        with open(f, encoding='utf-8-sig') as fp:
+        file_fully_recognized = True
+        file_imported_any = False
+        for stream_name, fp in _open_csv_streams(f, is_zip):
             reader = csv.DictReader(fp)
             header = reader.fieldnames or []
             tbl, colmap = _detect(header)
             if tbl is None:
-                unknown.append(name); continue
+                unknown.append(stream_name)
+                file_fully_recognized = False
+                fp.close()
+                continue
+            file_imported_any = True
             rows = [_apply_map(r, colmap) for r in reader]
-            rows = [r for r in rows if r.get("code") is None or "code" not in colmap.values() or r.get("code") is not None]
-            # 过滤 code 为 None 的（非法 code）
+            fp.close()
             if "code" in colmap.values():
                 rows = [r for r in rows if r.get("code") is not None]
             imported[tbl] = imported.get(tbl, 0) + len(rows)
             if dry_run:
-                print(f"  [dry-run] {name} → {tbl}: {len(rows)} 行")
+                print(f"  [dry-run] {stream_name} → {tbl}: {len(rows)} 行")
             elif rows:
                 cols = list(rows[0].keys())
-                con.executemany(f"INSERT OR REPLACE INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})",
-                                [tuple(r[c] for c in cols) for r in rows])
+                con.executemany(
+                    f"INSERT OR REPLACE INTO {tbl} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                    [tuple(r[c] for c in cols) for r in rows])
+        if file_imported_any and file_fully_recognized:
+            removable.append(f)
     if unknown and not dry_run:
-        print(f"  ⚠️ 未识别 {len(unknown)} 个文件（表头无匹配）: {unknown[:5]}...")
-    if not dry_run: con.commit()
-    return qc_assertions(con)
+        print(f"  ⚠️ 未识别 {len(unknown)} 个（表头无匹配，不删除）: {unknown[:5]}...")
+    if not dry_run:
+        con.commit()
+
+    qc = qc_assertions(con)
+    verify_ok, verify_detail = verify_online(con) if (verify and not dry_run) else (True, "跳过线上验证")
+
+    removed = 0
+    if not dry_run and verify_ok and qc_all_pass(qc):
+        if keep_source:
+            print("  ℹ️ --keep-source：保留源文件")
+        else:
+            for f in removable:
+                try:
+                    os.remove(f)
+                    removed += 1
+                except OSError as e:
+                    print(f"  ⚠️ 删除失败 {os.path.basename(f)}: {e}")
+            print(f"  ✅ 线上验证 + QC 通过，已删除 {removed} 个源文件")
+    elif not dry_run:
+        print(f"  ⛔ 验证未通过（QC 违规 {sum(1 for v in qc.values() if v)} 项 / 线上验证通过={verify_ok}），保留源文件")
+
+    return {"imported": imported, "unknown_count": len(unknown), "qc": qc,
+            "verify": {"ok": verify_ok, "detail": verify_detail}, "removed": removed}
+
 
 if __name__ == "__main__":
     import sys
-    DB = "/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb"
-    DL = "/Volumes/My PSSD/downlodData/taobao"
+    DB = os.environ.get("STOCK_DB", "/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb")
+    DL = os.environ.get("STOCK_DOWNLOAD", "/Volumes/My PSSD/downlodData/taobao")
     a = sys.argv[1:]
     if "--qc" in a:
         print("QC:", qc_assertions(duckdb.connect(DB, read_only=True)))
     else:
-        sync(DL, DB, dry_run="--dry-run" in a)
+        result = sync(DL, DB, dry_run="--dry-run" in a, keep_source="--keep-source" in a)
+        print(f"导入统计: {result['imported']}")
+        print(f"QC 违规: {result['qc']}")
+        print(f"线上验证: {result['verify']}")
+        print(f"删除源文件: {result['removed']} 个")
