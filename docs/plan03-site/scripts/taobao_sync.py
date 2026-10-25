@@ -13,6 +13,7 @@ v3 更新: ① 按「表头签名」识别 CSV 类型（修第 7 地雷：文件
 import os, re, io, glob, datetime, csv, zipfile, random, json
 import urllib.request
 import duckdb
+import pandas as pd
 
 CALIBER = {"adjust": "前复权", "cost_rate": 0.0015, "code_format": "sz000001",
            "market_enum": {"sh","sz","bj"}, "amount_unit": "元", "volume_unit": "股"}
@@ -649,16 +650,16 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, c
                     cols = list(rows[0].keys())
                     rows = _adapt_date_types(con, tbl, rows, cols)
                     cols_sql = ",".join('"%s"' % c for c in cols)
-                    ph = ",".join('?' * len(cols))
-                    if _has_pk(con, tbl):
-                        con.executemany(
-                            f"INSERT OR REPLACE INTO {tbl} ({cols_sql}) VALUES ({ph})",
-                            [tuple(r[c] for c in cols) for r in rows])
-                    else:
-                        _delete_for_rows(con, tbl, rows, cols)
-                        con.executemany(
-                            f"INSERT INTO {tbl} ({cols_sql}) VALUES ({ph})",
-                            [tuple(r[c] for c in cols) for r in rows])
+                    df = pd.DataFrame(rows, columns=cols)
+                    con.register("_batch", df)
+                    try:
+                        if _has_pk(con, tbl):
+                            con.execute(f'INSERT OR REPLACE INTO "{tbl}" ({cols_sql}) SELECT {cols_sql} FROM _batch')
+                        else:
+                            _delete_for_rows(con, tbl, rows, cols)
+                            con.execute(f'INSERT INTO "{tbl}" ({cols_sql}) SELECT {cols_sql} FROM _batch')
+                    finally:
+                        con.unregister("_batch")
                 except Exception as e:
                     print(f"  ❌ {tbl} 写入失败: {type(e).__name__}: {e}")
                     print(f"     首行: {rows[0] if rows else None}")
