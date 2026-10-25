@@ -805,6 +805,164 @@ def cleanup_imported(download_dir, db_path, dates, dry_run=True):
     return removed
 
 
+def sync_base_data(base_dir, con, dry_run=False):
+    """同步《A股交易基础数据》目录（交易日历/股票列表/停复牌/涨跌停/ST/曾用名）。
+
+    目录结构（淘宝「赛博空间」）：
+      交易日历.csv / 股票列表.csv / 股票曾用名汇总.csv / 退市股票列表.csv
+      每日停复牌.zip / 每日涨跌停价格.zip
+      ST股票列表_每日更新/（月度目录 + 汇总 zip）
+    """
+    stats = {}
+    if not os.path.isdir(base_dir):
+        print(f"  ⚠️ 基础数据目录不存在: {base_dir}")
+        return stats
+
+    def _bulk(df, table, cols, mode="insert"):
+        con.register("_bd", df)
+        cs = ",".join('"%s"' % c for c in cols)
+        if mode == "replace":
+            con.execute('DELETE FROM "%s"' % table)
+        con.execute('INSERT INTO "%s" (%s) SELECT %s FROM _bd' % (table, cs, cs))
+        con.unregister("_bd")
+
+    # 1. 交易日历 → trade_cal
+    p = os.path.join(base_dir, "交易日历.csv")
+    if os.path.exists(p):
+        rows = list(csv.DictReader(open(p, encoding="utf-8-sig")))
+        dates = sorted({normalize_date(r["日期"]) for r in rows if r.get("是否交易") == "交易"})
+        dates = [d for d in dates if d]
+        df = pd.DataFrame({"date": dates})
+        con.register("_bd", df)
+        con.execute("DELETE FROM trade_cal")
+        con.execute("INSERT INTO trade_cal (date) SELECT date FROM _bd")
+        con.unregister("_bd")
+        stats["trade_cal"] = len(dates)
+
+    # 2. 股票列表 + 退市列表 → stock_info
+    COLS = ["ts_code", "code", "name", "area", "industry", "fullname", "enname", "pinyin",
+            "market", "exchange", "currency", "list_status", "list_date", "delist_date",
+            "hs_connect", "controller", "controller_type"]
+    MAP = {"TS代码": "ts_code", "股票代码": "code", "股票名称": "name", "地域": "area",
+           "所属行业": "industry", "股票全称": "fullname", "英文全称": "enname", "拼音缩写": "pinyin",
+           "市场类型": "market", "交易所代码": "exchange", "交易货币": "currency",
+           "上市状态": "list_status", "上市日期": "list_date", "退市日期": "delist_date",
+           "沪深港通标的": "hs_connect", "实控人名称": "controller", "实控人企业性质": "controller_type"}
+    all_rows = []
+    for fn in ["股票列表.csv", "退市股票列表.csv"]:
+        fp = os.path.join(base_dir, fn)
+        if os.path.exists(fp):
+            for r in csv.DictReader(open(fp, encoding="utf-8-sig")):
+                all_rows.append({t: r.get(s, "") for s, t in MAP.items()})
+    if all_rows:
+        _bulk(pd.DataFrame(all_rows, columns=COLS), "stock_info", COLS, "replace")
+        stats["stock_info"] = len(all_rows)
+
+    # 3. 股票曾用名 → stock_rename
+    p = os.path.join(base_dir, "股票曾用名汇总.csv")
+    if os.path.exists(p):
+        rows = list(csv.DictReader(open(p, encoding="utf-8-sig")))
+        recs = [{"序号": int(r["序号"]) if r.get("序号", "").isdigit() else None,
+                 "代码": r.get("代码"), "名称": r.get("名称"),
+                 "更名日期": normalize_date(r.get("更名日期")),
+                 "更名前简称": r.get("更名前简称"), "更名后简称": r.get("更名后简称"),
+                 "证券类型": r.get("证券类型")} for r in rows]
+        _bulk(pd.DataFrame(recs, columns=["序号","代码","名称","更名日期","更名前简称","更名后简称","证券类型"]),
+              "stock_rename", ["序号","代码","名称","更名日期","更名前简称","更名后简称","证券类型"], "replace")
+        stats["stock_rename"] = len(recs)
+
+    # 4. 每日停复牌 → suspension（zip 按股票拆分）
+    p = os.path.join(base_dir, "每日停复牌.zip")
+    if os.path.exists(p):
+        total = 0
+        with zipfile.ZipFile(p) as zf:
+            for inner in sorted(n for n in zf.namelist() if n.endswith(".csv")):
+                lines = zf.read(inner).decode("utf-8-sig").splitlines()
+                if len(lines) < 2:
+                    continue
+                hdr = lines[0].split(",")
+                recs = [dict(zip(hdr, ln.split(","))) for ln in lines[1:]]
+                df = pd.DataFrame([{c: r.get(c, "") for c in ["股票代码","交易日期","停复牌时间段","停复牌类型"]} for r in recs])
+                con.register("_bd", df)
+                con.execute('INSERT INTO suspension ("股票代码","交易日期","停复牌时间段","停复牌类型") '
+                            'SELECT "股票代码","交易日期","停复牌时间段","停复牌类型" FROM _bd')
+                con.unregister("_bd")
+                total += len(recs)
+        stats["suspension"] = total
+
+    # 5. 每日涨跌停价格 → limit_price（zip 按股票拆分）
+    p = os.path.join(base_dir, "每日涨跌停价格.zip")
+    if os.path.exists(p):
+        total = 0
+        with zipfile.ZipFile(p) as zf:
+            for inner in sorted(n for n in zf.namelist() if n.endswith(".csv")):
+                lines = zf.read(inner).decode("utf-8-sig").splitlines()
+                if len(lines) < 2:
+                    continue
+                hdr = lines[0].split(",")
+                recs = []
+                for ln in lines[1:]:
+                    r = dict(zip(hdr, ln.split(",")))
+                    code = normalize_code(r.get("股票代码", ""))
+                    d = normalize_date(r.get("交易日期"))
+                    if not code or not d:
+                        continue
+                    def _f(k):
+                        try: return float(r.get(k) or "")
+                        except Exception: return None
+                    recs.append({"market": normalize_market(code), "code": code, "date": d,
+                                 "prev_close": _f("昨日收盘价"), "limit_up": _f("涨停价"), "limit_down": _f("跌停价")})
+                if not recs:
+                    continue
+                df = pd.DataFrame(recs)
+                con.register("_bd", df)
+                con.execute('INSERT OR REPLACE INTO limit_price (market,code,date,prev_close,limit_up,limit_down) '
+                            'SELECT market,code,date,prev_close,limit_up,limit_down FROM _bd')
+                con.unregister("_bd")
+                total += len(recs)
+        stats["limit_price"] = total
+
+    # 6. ST 列表 → st_stock（汇总 zip + 月度目录）
+    st_total = 0
+    st_zip = os.path.join(base_dir, "ST股票列表_每日更新", "2016年1月至2026年8月.zip")
+    st_cols = ["股票代码","股票名称","交易日期","ST类型","ST类型名称"]
+    if os.path.exists(st_zip):
+        with zipfile.ZipFile(st_zip) as zf:
+            for inner in sorted(n for n in zf.namelist() if n.endswith(".csv")):
+                lines = zf.read(inner).decode("utf-8-sig").splitlines()
+                if len(lines) < 2:
+                    continue
+                hdr = lines[0].split(",")
+                recs = [{c: dict(zip(hdr, ln.split(","))).get(c, "") for c in st_cols} for ln in lines[1:]]
+                df = pd.DataFrame(recs, columns=st_cols)
+                con.register("_bd", df)
+                con.execute('INSERT INTO st_stock ("股票代码","股票名称","交易日期","ST类型","ST类型名称") '
+                            'SELECT "股票代码","股票名称","交易日期","ST类型","ST类型名称" FROM _bd')
+                con.unregister("_bd")
+                st_total += len(recs)
+    # 月度目录补充
+    for d in sorted(glob.glob(os.path.join(base_dir, "ST股票列表_每日更新", "20*"))):
+        if not os.path.isdir(d):
+            continue
+        for fp in sorted(glob.glob(os.path.join(d, "*.csv"))):
+            rows = list(csv.DictReader(open(fp, encoding="utf-8-sig")))
+            if not rows:
+                continue
+            df = pd.DataFrame([{c: r.get(c, "") for c in st_cols} for r in rows], columns=st_cols)
+            con.register("_bd", df)
+            con.execute('DELETE FROM st_stock WHERE "交易日期" IN (SELECT DISTINCT "交易日期" FROM _bd)')
+            con.execute('INSERT INTO st_stock ("股票代码","股票名称","交易日期","ST类型","ST类型名称") '
+                        'SELECT "股票代码","股票名称","交易日期","ST类型","ST类型名称" FROM _bd')
+            con.unregister("_bd")
+            st_total += len(rows)
+    if st_total:
+        stats["st_stock"] = st_total
+
+    if not dry_run:
+        con.commit()
+    return stats
+
+
 if __name__ == "__main__":
     import sys
     DB = os.environ.get("STOCK_DB", "/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb")
@@ -812,6 +970,12 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if "--qc" in a:
         print("QC:", qc_assertions(duckdb.connect(DB, read_only=True)))
+    elif "--base-data" in a:
+        # 用法: --base-data [--dry-run]；同步《A股交易基础数据》目录
+        con = duckdb.connect(DB)
+        stats = sync_base_data(os.path.join(DL, "A股交易基础数据"), con, dry_run="--dry-run" in a)
+        print("基础数据导入:", stats)
+        con.close()
     elif "--cleanup" in a:
         # 用法: --cleanup 20261021,20261022 [--apply]
         i = a.index("--cleanup")
