@@ -122,7 +122,7 @@ SOURCE_MAP = [
         "交易日期":"date","股票代码":"code","营业部名称":"dept","净成交额(元)":("net","元"),"买卖类型":"side"}),
     # 行业热度榜（热度值 + 上榜解读）
     (frozenset({"热度值","排行榜获取时间"}), "hot_rank", {
-        "交易日期":"date","股票代码":"code","股票名称":"name","排行":"rank","热度值":"hot","标签":"tag"}),
+        "交易日期":"date","股票代码":"code_keep","股票名称":"name","排行":"rank","热度值":"hot","标签":"tag"}),
     # ST 列表
     (frozenset({"ST类型"}), "st_stock", {
         "股票代码":"code","股票名称":"name","交易日期":"date","ST类型":"st_type"}),
@@ -258,7 +258,7 @@ def _apply_map(row, colmap):
     for src, tgt in colmap.items():
         if src not in row: continue
         if tgt == "code": out[tgt] = normalize_code(row[src])
-        elif tgt == "code_keep": out[tgt] = str(row[src]).strip() or None   # 板块指数码 880xxx 原样保留
+        elif tgt == "code_keep": out["code"] = str(row[src]).strip() or None   # 跨市场码（美股/港股/板块）原样保留
         elif tgt == "date": out[tgt] = normalize_date(row[src])
         elif tgt == "dt": out[tgt] = normalize_datetime(row[src])
         elif isinstance(tgt, tuple): out[tgt[0]] = normalize_num(row[src], tgt[1])
