@@ -171,7 +171,69 @@ SOURCE_MAP = [
     (frozenset({"题材代码","题材名称","成分股票代码","交易日期"}), "theme_component", {
         "题材代码":"theme_code","题材名称":"theme_name","成分股票名称":"stock_name","成分股票代码":"stock_code",
         "交易日期":"date","描述":"desc","人气值":"hot"}),
+    # 业绩快报
+    (frozenset({"股票代码","公告日期","报告期","营业收入(元)"}), "performance_express", {
+        "股票代码":"code","公告日期":"date","报告期":"report_period",
+        "营业收入(元)":("revenue","元"),"营业利润(元)":("op_profit","元"),
+        "利润总额(元)":("total_profit","元"),"净利润(元)":("net_profit","元"),
+        "总资产(元)":("total_assets","元"),"每股收益(摊薄)(元)":("eps","元"),
+        "净资产收益率(摊薄)(%)":("roe","%"),"业绩简要说明":"summary"}),
+    # 业绩预告
+    (frozenset({"股票代码","公告日期","报告期","预告类型"}), "performance_forecast", {
+        "股票代码":"code","公告日期":"date","报告期":"report_period",
+        "预告类型":"forecast_type","净利润变动幅度下限(%)":("profit_change_low","%"),
+        "净利润变动幅度上限(%)":("profit_change_high","%"),
+        "预告净利润下限(万元)":("forecast_net_low","万元"),"预告净利润上限(万元)":("forecast_net_high","万元"),
+        "上年同期归母净利润(万元)":("last_year_net","万元"),"预告摘要":"summary","业绩变动原因":"reason"}),
+    # 主营业务构成
+    (frozenset({"股票代码","报告期","主营业务来源"}), "main_business", {
+        "股票代码":"code","报告期":"report_period","类型":"type","主营业务来源":"source",
+        "主营业务收入(元)":("revenue","元"),"主营业务利润(元)":("profit","元"),
+        "主营业务成本(元)":("cost","元"),"货币代码":"currency"}),
+    # 分红送股
+    (frozenset({"股票代码","分红年度","预案公告日"}), "dividend", {
+        "股票代码":"code","分红年度":"year","预案公告日":"ann_date","实施进度":"progress",
+        "每股送股比例":("send_ratio","股"),"每股转增比例":("transfer_ratio","股"),
+        "每股分红（税前）":("dividend_pre","元"),"除权除息日":"ex_date"}),
+    # 分红配股
+    (frozenset({"股票代码","公告日期","送股(股)"}), "allotment", {
+        "股票代码":"code","公告日期":"date","送股(股)":("send_share","股"),
+        "转增(股)":("transfer_share","股"),"派息(税前)(元)":("dividend","元"),
+        "配股方案(每10股配股股数)":("allot_plan","股"),"配股价格(元)":("allot_price","元"),
+        "募集资金合计(元)":("raised","元")}),
+    # 前十大股东 / 前十大流通股东（表头相同，靠文件名区分）
+    (frozenset({"股票代码","公告日期","报告期","股东名称"}), "top_holder", {
+        "股票代码":"code","公告日期":"date","报告期":"report_period","股东名称":"holder",
+        "持股数量":("shares","股"),"持股比例(%)":("ratio","%"),
+        "流通股占比(%)":("float_ratio","%"),"持股变动":"change","股东类型":"holder_type"}),
+    # 现金流量表（关键字段）
+    (frozenset({"股票代码","公告日期","报告期","经营活动产生的现金流量净额"}), "cash_flow", {
+        "股票代码":"code","公告日期":"date","报告期":"report_period","净利润":("net_profit","元"),
+        "经营活动产生的现金流量净额":("operating_cf","元"),
+        "投资活动产生的现金流量净额":("investing_cf","元"),
+        "筹资活动产生的现金流量净额":("financing_cf","元"),
+        "现金及现金等价物净增加额":("net_cash","元")}),
+    # 股东人数
+    (frozenset({"股票代码","公告日期","截止日期","股东户数"}), "holder_count", {
+        "股票代码":"code","公告日期":"date","截止日期":"end_date","股东户数":("holder_num","户")}),
+    # 股权质押明细
+    (frozenset({"股票代码","公告日期","股东名称","质押数量(万股)"}), "pledge_detail", {
+        "股票代码":"code","公告日期":"date","股东名称":"holder","股东类型":"holder_type",
+        "质押数量(万股)":("pledge_amount","万股"),"质押开始日期":"start_date","质押结束日期":"end_date",
+        "是否已解押":"released","质押方":"pledgee"}),
+    # 股权质押统计
+    (frozenset({"股票代码","截止日期","质押次数"}), "pledge_stat", {
+        "股票代码":"code","截止日期":"end_date","质押次数":("pledge_count","次"),
+        "无限售股质押数量(万)":("unrestricted_pledge","万"),"限售股质押数量(万)":("restricted_pledge","万"),
+        "总股本(万)":("total_share","万"),"质押比例(%)":("pledge_ratio","%")}),
+    # 财务审计意见
+    (frozenset({"股票代码","公告日期","报告期","审计结果"}), "audit_opinion", {
+        "股票代码":"code","公告日期":"date","报告期":"report_period","审计结果":"audit_result",
+        "审计总费用":("audit_fee","元"),"会计事务所":"accounting_firm","签字会计师":"signer"}),
 ]
+
+#: 表头签名相同、需靠文件名区分的表（前十大股东 vs 前十大流通股东）
+_NAME_OVERRIDE = {"前十大流通股东": "top_float_holder"}
 
 # ── QC 断言 ──
 def qc_assertions(con):
@@ -287,6 +349,18 @@ _PK = {
     "fin_disclosure": ["code", "report_period"],
     "share_unlock": ["code", "unlock_date", "holder"],
     "theme_component": ["theme_code", "stock_code", "date"],
+    "performance_express": ["code", "date", "report_period"],
+    "performance_forecast": ["code", "date", "report_period"],
+    "main_business": ["code", "report_period", "source"],
+    "dividend": ["code", "year", "ann_date"],
+    "allotment": ["code", "date"],
+    "top_holder": ["code", "date", "holder"],
+    "top_float_holder": ["code", "date", "holder"],
+    "cash_flow": ["code", "date", "report_period"],
+    "holder_count": ["code", "end_date"],
+    "pledge_detail": ["code", "date", "holder", "start_date"],
+    "pledge_stat": ["code", "end_date"],
+    "audit_opinion": ["code", "date", "report_period"],
 }
 
 
@@ -331,6 +405,11 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False):
             reader = csv.DictReader(fp)
             header = reader.fieldnames or []
             tbl, colmap = _detect(header)
+            if tbl == "top_holder":
+                for kw, override_tbl in _NAME_OVERRIDE.items():
+                    if kw in name:
+                        tbl = override_tbl
+                        break
             if tbl is None:
                 unknown.append(stream_name)
                 file_fully_recognized = False
