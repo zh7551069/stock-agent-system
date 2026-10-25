@@ -19,9 +19,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from judge.outcome import Decision, Library, judge  # noqa: E402
+from judge.outcome import DB_PATH, Decision, Library, judge  # noqa: E402
 
-DB = pathlib.Path("/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb")
+DB = DB_PATH
 GOLDEN = pathlib.Path(__file__).parent / "golden" / "golden_samples.json"
 requires_db = pytest.mark.skipif(not DB.exists(), reason="主库未挂载（外接盘）")
 

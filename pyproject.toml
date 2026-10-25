@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+# 测试目录
+testpaths = ["tests"]
+# 把仓库根加入 sys.path，让测试直接 `from judge...` 而不必各自 sys.path.insert
+pythonpath = ["."]
+# 失败/跳过时显示简短的额外信息
+addopts = "-ra"

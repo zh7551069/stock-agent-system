@@ -37,13 +37,17 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import os
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
 
 import duckdb
 
 DB_PATH = Path(
-    "/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb"
+    os.environ.get(
+        "STOCK_DB",
+        "/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb",
+    )
 )
 
 #: 默认基准：沪深300（前缀式口径，实测 index_daily 用 sh000300）

@@ -18,10 +18,10 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from judge.outcome import (  # noqa: E402
-    Decision, Library, judge, summarize, to_prefix, to_suffix, split_prefix,
+    DB_PATH, Decision, Library, judge, summarize, to_prefix, to_suffix, split_prefix,
 )
 
-DB = pathlib.Path("/Volumes/My PSSD/本地数据库_v2版（淘宝购买）/duckdb/taobao_minute.duckdb")
+DB = DB_PATH
 requires_db = pytest.mark.skipif(not DB.exists(), reason="主库未挂载（外接盘）")
 
 
