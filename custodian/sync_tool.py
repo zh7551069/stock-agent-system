@@ -88,3 +88,71 @@ def run_sync(
         verify_detail=raw.get("verify", {}).get("detail", ""),
         removed=raw.get("removed", 0),
     )
+
+
+# ── 基础数据 / 榜单数据（目录型同步，agent 可直接调用）──
+
+def run_base_data(
+    sync_fn: SyncFn,
+    *,
+    base_dir: str,
+    db_path: str,
+    dry_run: bool = False,
+    when: dt.date | None = None,
+) -> SyncResult:
+    """同步《A股交易基础数据》目录（交易日历/停复牌/涨跌停/ST/股票列表）。
+
+    ``sync_fn`` 需为 ``taobao_sync.sync_base_data(base_dir, con, dry_run)``（接受连接）。
+    """
+    import duckdb
+
+    key = make_idempotency_key(base_dir, db_path, when)
+    con = duckdb.connect(db_path, read_only=dry_run)
+    try:
+        raw = sync_fn(base_dir, con, dry_run=dry_run)
+    finally:
+        con.close()
+    return SyncResult(
+        idempotency_key=key,
+        tool=SYNC_TOOL.id,
+        version=SYNC_TOOL.version,
+        imported=raw,
+        unknown_count=0,
+        qc={},
+        verify_ok=True,
+        verify_detail="base_data（目录型，无线上验证）",
+        removed=0,
+    )
+
+
+def run_list_data(
+    sync_fn: SyncFn,
+    *,
+    base_dir: str,
+    db_path: str,
+    dry_run: bool = False,
+    when: dt.date | None = None,
+) -> SyncResult:
+    """同步《A股_榜单数据》目录（涨停池/同花顺池/龙虎榜/连板天梯等，增量幂等）。
+
+    ``sync_fn`` 需为 ``taobao_sync.sync_list_data(base_dir, con, dry_run)``（接受连接）。
+    """
+    import duckdb
+
+    key = make_idempotency_key(base_dir, db_path, when)
+    con = duckdb.connect(db_path, read_only=dry_run)
+    try:
+        raw = sync_fn(base_dir, con, dry_run=dry_run)
+    finally:
+        con.close()
+    return SyncResult(
+        idempotency_key=key,
+        tool=SYNC_TOOL.id,
+        version=SYNC_TOOL.version,
+        imported=raw,
+        unknown_count=0,
+        qc={},
+        verify_ok=True,
+        verify_detail="list_data（目录型，按日期替换幂等）",
+        removed=0,
+    )

@@ -819,6 +819,8 @@ def sync_base_data(base_dir, con, dry_run=False):
         return stats
 
     def _bulk(df, table, cols, mode="insert"):
+        if dry_run:
+            return
         con.register("_bd", df)
         cs = ",".join('"%s"' % c for c in cols)
         if mode == "replace":
@@ -832,11 +834,12 @@ def sync_base_data(base_dir, con, dry_run=False):
         rows = list(csv.DictReader(open(p, encoding="utf-8-sig")))
         dates = sorted({normalize_date(r["日期"]) for r in rows if r.get("是否交易") == "交易"})
         dates = [d for d in dates if d]
-        df = pd.DataFrame({"date": dates})
-        con.register("_bd", df)
-        con.execute("DELETE FROM trade_cal")
-        con.execute("INSERT INTO trade_cal (date) SELECT date FROM _bd")
-        con.unregister("_bd")
+        if not dry_run:
+            df = pd.DataFrame({"date": dates})
+            con.register("_bd", df)
+            con.execute("DELETE FROM trade_cal")
+            con.execute("INSERT INTO trade_cal (date) SELECT date FROM _bd")
+            con.unregister("_bd")
         stats["trade_cal"] = len(dates)
 
     # 2. 股票列表 + 退市列表 → stock_info
@@ -882,12 +885,14 @@ def sync_base_data(base_dir, con, dry_run=False):
                     continue
                 hdr = lines[0].split(",")
                 recs = [dict(zip(hdr, ln.split(","))) for ln in lines[1:]]
+                total += len(recs)
+                if dry_run:
+                    continue
                 df = pd.DataFrame([{c: r.get(c, "") for c in ["股票代码","交易日期","停复牌时间段","停复牌类型"]} for r in recs])
                 con.register("_bd", df)
                 con.execute('INSERT INTO suspension ("股票代码","交易日期","停复牌时间段","停复牌类型") '
                             'SELECT "股票代码","交易日期","停复牌时间段","停复牌类型" FROM _bd')
                 con.unregister("_bd")
-                total += len(recs)
         stats["suspension"] = total
 
     # 5. 每日涨跌停价格 → limit_price（zip 按股票拆分）
@@ -914,12 +919,14 @@ def sync_base_data(base_dir, con, dry_run=False):
                                  "prev_close": _f("昨日收盘价"), "limit_up": _f("涨停价"), "limit_down": _f("跌停价")})
                 if not recs:
                     continue
+                total += len(recs)
+                if dry_run:
+                    continue
                 df = pd.DataFrame(recs)
                 con.register("_bd", df)
                 con.execute('INSERT OR REPLACE INTO limit_price (market,code,date,prev_close,limit_up,limit_down) '
                             'SELECT market,code,date,prev_close,limit_up,limit_down FROM _bd')
                 con.unregister("_bd")
-                total += len(recs)
         stats["limit_price"] = total
 
     # 6. ST 列表 → st_stock（汇总 zip + 月度目录）
@@ -934,12 +941,14 @@ def sync_base_data(base_dir, con, dry_run=False):
                     continue
                 hdr = lines[0].split(",")
                 recs = [{c: dict(zip(hdr, ln.split(","))).get(c, "") for c in st_cols} for ln in lines[1:]]
+                st_total += len(recs)
+                if dry_run:
+                    continue
                 df = pd.DataFrame(recs, columns=st_cols)
                 con.register("_bd", df)
                 con.execute('INSERT INTO st_stock ("股票代码","股票名称","交易日期","ST类型","ST类型名称") '
                             'SELECT "股票代码","股票名称","交易日期","ST类型","ST类型名称" FROM _bd')
                 con.unregister("_bd")
-                st_total += len(recs)
     # 月度目录补充
     for d in sorted(glob.glob(os.path.join(base_dir, "ST股票列表_每日更新", "20*"))):
         if not os.path.isdir(d):
@@ -948,13 +957,15 @@ def sync_base_data(base_dir, con, dry_run=False):
             rows = list(csv.DictReader(open(fp, encoding="utf-8-sig")))
             if not rows:
                 continue
+            st_total += len(rows)
+            if dry_run:
+                continue
             df = pd.DataFrame([{c: r.get(c, "") for c in st_cols} for r in rows], columns=st_cols)
             con.register("_bd", df)
             con.execute('DELETE FROM st_stock WHERE "交易日期" IN (SELECT DISTINCT "交易日期" FROM _bd)')
             con.execute('INSERT INTO st_stock ("股票代码","股票名称","交易日期","ST类型","ST类型名称") '
                         'SELECT "股票代码","股票名称","交易日期","ST类型","ST类型名称" FROM _bd')
             con.unregister("_bd")
-            st_total += len(rows)
     if st_total:
         stats["st_stock"] = st_total
 
