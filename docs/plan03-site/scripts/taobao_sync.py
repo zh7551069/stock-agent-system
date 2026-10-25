@@ -313,7 +313,7 @@ SOURCE_MAP = [
         "送股(股)":("送股(股)","num","股"),"转增(股)":("转增(股)","num","股"),
         "派息(税前)(元)":("派息(税前)(元)","num","元"),
         "配股方案(每10股配股股数)":("配股方案(每10股配股股数)","num",""),
-        "配股价格(元)":("配股价格(元)","num","元"),"募集资金合计(元)":("募集资金合计(元)","num","元")}),
+        "配股价格(元)":("配股价格(元)","num","元")}),
     # 前十大股东 / 前十大流通股东（表头相同，靠文件名区分）→ fin_top10_holder / fin_top10_float
     (frozenset({"股票代码","公告日期","报告期","股东名称"}), "fin_top10_holder", {
         "股票代码":("股票代码","code"),"公告日期":("公告日期","date"),"报告期":"报告期",
@@ -672,6 +672,12 @@ def sync(download_dir, db_path, dry_run=False, verify=True, keep_source=False, c
                 try:
                     _ensure_table(con, tbl, colmap)
                     cols = list(rows[0].keys())
+                    # 过滤掉目标表不存在的列（"*" 保留模式可能带入 CSV 独有列）
+                    try:
+                        real_cols = {r[0] for r in con.execute('DESCRIBE "%s"' % tbl).fetchall()}
+                        cols = [c for c in cols if c in real_cols]
+                    except Exception:
+                        pass
                     rows = _adapt_date_types(con, tbl, rows, cols)
                     cols_sql = ",".join('"%s"' % c for c in cols)
                     df = pd.DataFrame(rows, columns=cols)
