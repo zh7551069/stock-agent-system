@@ -10,20 +10,15 @@
 from __future__ import annotations
 
 import datetime as dt
-import pathlib
-import sys
 
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-from judge.outcome import (  # noqa: E402
+from judge.outcome import (
     DB_PATH, Decision, Library, judge, summarize, to_prefix, to_suffix, split_prefix,
 )
 
 DB = DB_PATH
 requires_db = pytest.mark.skipif(not DB.exists(), reason="主库未挂载（外接盘）")
-
 
 # ---------------------------------------------------------------- 口径测试
 
@@ -34,26 +29,22 @@ def test_symbol_suffix_normalisation():
     assert to_suffix("SZ000001") == "000001.SZ"
     assert to_suffix("1.SZ") == "000001.SZ"          # 补零
 
-
 def test_symbol_prefix_normalisation():
     assert to_prefix("000001.SZ") == "sz000001"
     assert to_prefix("sz000001") == "sz000001"
     assert to_prefix("600000.SH") == "sh600000"
     assert split_prefix("sz000001") == ("sz", "000001")
 
-
 def test_bare_code_is_rejected_not_guessed():
     """裸 6 位码在库中是歧义码（000001 是上证指数），必须拒绝而不是猜。"""
     with pytest.raises(ValueError):
         to_suffix("000001")
-
 
 def test_side_and_horizon_validation():
     with pytest.raises(ValueError):
         Decision("000001.SZ", "hold", dt.date(2026, 9, 24))
     with pytest.raises(ValueError):
         Decision("000001.SZ", "buy", dt.date(2026, 9, 24), horizons=(0,))
-
 
 # ---------------------------------------------------------------- 真实数据
 
@@ -70,7 +61,6 @@ def test_entry_price_is_next_trading_day_open():
         # 且入场日确实是 T 之后第一个交易日
         assert o.entry_date == lib.trading_days_after(T, 1)[0]
 
-
 @requires_db
 def test_excess_equals_ret_minus_bench():
     with Library() as lib:
@@ -79,7 +69,6 @@ def test_excess_equals_ret_minus_bench():
         for k in (1, 3, 5, 20):
             if o.ret[k] is not None and o.bench_ret[k] is not None:
                 assert o.excess[k] == pytest.approx(o.ret[k] - o.bench_ret[k], abs=1e-12)
-
 
 @requires_db
 def test_net_is_gross_minus_cost():
@@ -91,7 +80,6 @@ def test_net_is_gross_minus_cost():
             if o.excess[k] is not None:
                 assert o.excess_net[k] == pytest.approx(o.excess[k] - 0.0015, abs=1e-12)
                 assert o.ret_net[k] == pytest.approx(o.ret[k] - 0.0015, abs=1e-12)
-
 
 @requires_db
 def test_blocked_decision_yields_missing_not_zero():
@@ -115,7 +103,6 @@ def test_blocked_decision_yields_missing_not_zero():
         assert o.reason == "limit_up_on_open"
         assert all(v is None for v in o.ret.values()), "缺失必须保持 None，不得写 0"
 
-
 @requires_db
 def test_no_lookahead_window_is_respected():
     """只观察到 T+20；更远的数据不得进入计算（用 k 超过可用交易日验证）。"""
@@ -124,7 +111,6 @@ def test_no_lookahead_window_is_respected():
         o = judge(Decision("000001.SZ", "buy", T, horizons=(1, 500)), lib)
         assert o.ret[1] is not None
         assert o.ret[500] is None, "超出可用交易日必须缺失"
-
 
 @requires_db
 def test_market_column_means_different_things_per_table():
@@ -147,14 +133,12 @@ def test_market_column_means_different_things_per_table():
         hs_n = lib._con.execute("SELECT count(*) FROM limit_price WHERE market='hs'").fetchone()[0]
         assert hs_n / total > 0.9, f"limit_price.hs 占比异常：{hs_n/total:.3f}"
 
-
 @requires_db
 def test_raw_open_uses_daily_market_convention():
     """raw_open 必须能真的取到值（这正是上面那个坑的回归测试）。"""
     with Library() as lib:
         px = lib.raw_open("600743.SH", dt.date(2026, 9, 22))
         assert px is not None and px > 0, "raw_open 取不到值，说明 market 口径写错了"
-
 
 @requires_db
 def test_summarize_keeps_untradable_in_denominator():

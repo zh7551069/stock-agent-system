@@ -5,13 +5,7 @@
 """
 from __future__ import annotations
 
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-from judge.stats import DaySeries, day_series, paired_diff, paired_t  # noqa: E402
-
+from judge.stats import DaySeries, day_series, paired_diff, paired_t
 
 def test_paired_t_aligns_by_date_not_index():
     """对照组缺第一天时，按索引配对会整体错位——本测试钉死正确行为。"""
@@ -27,7 +21,6 @@ def test_paired_t_aligns_by_date_not_index():
     assert abs(m - (-0.5)) > 1e-9
     assert t is not None
 
-
 def test_paired_diff_reports_common_days():
     days_a = [f"d{i}" for i in range(1, 9)]
     days_b = [f"d{i}" for i in range(4, 10)]          # 交集 d4..d8 = 5 天
@@ -37,7 +30,6 @@ def test_paired_diff_reports_common_days():
     assert common == 5, f"共同日数应为 5，得到 {common}"
     assert m == sum([4.0, 5.0, 6.0, 7.0, 8.0]) / 5 - 1.0
     assert t is not None
-
 
 def test_day_series_carries_dates_and_skips_missing():
     recs = [
@@ -50,7 +42,6 @@ def test_day_series_carries_dates_and_skips_missing():
     assert isinstance(s, DaySeries)
     assert s.days == ["d1", "d3"], "缺失日不应出现"
     assert list(s) == [2.0, 5.0]
-
 
 def test_day_series_is_list_compatible():
     """必须保持 list 兼容，否则调用方的 mean/tstat/median 会全部失效。"""

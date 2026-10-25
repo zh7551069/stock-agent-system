@@ -11,15 +11,11 @@
 from __future__ import annotations
 
 import datetime as dt
-import pathlib
-import sys
 
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-from judge.bulk import BulkLibrary            # noqa: E402
-from judge.outcome import DB_PATH, Decision, judge   # noqa: E402
+from judge.bulk import BulkLibrary          
+from judge.outcome import DB_PATH, Decision, judge 
 
 DB = DB_PATH
 requires_db = pytest.mark.skipif(not DB.exists(), reason="主库未挂载（外接盘）")
@@ -28,10 +24,8 @@ T = dt.date(2026, 8, 25)
 A = ["600519.SH", "000001.SZ"]                  # 第一批
 B = ["300750.SZ", "601869.SH", "600743.SH"]     # 第二批（不同集合）
 
-
 def _judge_all(lib, codes):
     return {c: judge(Decision(c, "buy", T, horizons=(1, 5, 20)), lib).as_dict() for c in codes}
-
 
 @requires_db
 def test_prefetch_order_does_not_change_results():
@@ -49,7 +43,6 @@ def test_prefetch_order_does_not_change_results():
 
     assert after == fresh, "预取顺序改变了判决结果（缓存串扰）"
 
-
 @requires_db
 def test_uncached_codes_fall_back_to_single_query():
     """未被预取的代码也必须能正确判决（回落到单条查询），不得静默判为不可成交。"""
@@ -59,7 +52,6 @@ def test_uncached_codes_fall_back_to_single_query():
         for c in B:                                   # 直接判 B，不做预取
             o = judge(Decision(c, "buy", T, horizons=(1, 5, 20)), lib)
             assert o.reason != "no_raw_bar_on_entry", f"{c} 未预取却被判为取不到原始价"
-
 
 @requires_db
 def test_bulk_matches_plain_library():

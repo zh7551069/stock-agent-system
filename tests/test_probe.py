@@ -5,19 +5,12 @@
 """
 from __future__ import annotations
 
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-
 def test_signals_well_formed():
     from judge.probe import RANKED, SIGNALS
     assert len(SIGNALS) >= 6, "内置信号至少 6 个"
     for name, (desc, sql) in SIGNALS.items():
         assert isinstance(desc, str) and desc, f"{name} 缺说明"
         assert "SELECT" in sql.upper(), f"{name} SQL 非 SELECT"
-
 
 def test_ranked_signals_well_formed():
     from judge.probe import RANKED

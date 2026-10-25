@@ -5,13 +5,7 @@
 """
 from __future__ import annotations
 
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-from judge.slice import bucket_time, norm_board, tercile, turnover_bucket  # noqa: E402
-
+from judge.slice import bucket_time, norm_board, tercile, turnover_bucket
 
 def test_norm_board_映射连板状态():
     assert norm_board("首板") == "首板"
@@ -21,11 +15,9 @@ def test_norm_board_映射连板状态():
     assert norm_board("新上市未开板") == "新上市未开板"
     assert norm_board("新上市") == "新上市未开板"
 
-
 def test_norm_board_空值():
     assert norm_board(None) is None
     assert norm_board("") is None
-
 
 def test_bucket_time_分桶边界():
     assert bucket_time("09:30") == "早盘封板(<=10:00)"
@@ -35,12 +27,10 @@ def test_bucket_time_分桶边界():
     assert bucket_time("13:30") == "尾盘封板(>=13:30)"   # 边界含 13:30
     assert bucket_time("14:59") == "尾盘封板(>=13:30)"
 
-
 def test_bucket_time_非法输入():
     assert bucket_time(None) is None
     assert bucket_time("") is None
     assert bucket_time("abc") is None
-
 
 def test_tercile_三分位():
     vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -51,18 +41,15 @@ def test_tercile_三分位():
     assert tercile(vals, 7) == "中"       # 含 hi 边界
     assert tercile(vals, 8) == "高"
 
-
 def test_tercile_空值与None():
     assert tercile([], 5) is None
     assert tercile([1, 2, 3], None) is None
-
 
 def test_turnover_bucket_边界():
     assert turnover_bucket(4.9) == "<5%"
     assert turnover_bucket(5) == "5-15%"
     assert turnover_bucket(15) == "5-15%"
     assert turnover_bucket(15.1) == ">15%"
-
 
 def test_turnover_bucket_字符串与非法():
     assert turnover_bucket("4.5") == "<5%"     # 库中换手率可能是字符串

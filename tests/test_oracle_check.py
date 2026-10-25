@@ -5,34 +5,24 @@
 """
 from __future__ import annotations
 
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-from judge.oracle_check import HORIZONS, passes  # noqa: E402
-
+from judge.oracle_check import HORIZONS, passes
 
 def test_horizons_contract():
     assert HORIZONS == (5, 20)
 
-
 def test_passes_true_when_all_windows_strong():
     report = {str(k): {"diff": 0.073, "paired_t": 106.5} for k in HORIZONS}
     assert passes(report) is True
-
 
 def test_passes_false_when_diff_below_threshold():
     report = {"5": {"diff": 0.073, "paired_t": 106.5},
               "20": {"diff": 0.01, "paired_t": 107.4}}   # T+20 diff 1% < 2%
     assert passes(report) is False
 
-
 def test_passes_false_when_paired_t_below_threshold():
     report = {"5": {"diff": 0.073, "paired_t": 106.5},
               "20": {"diff": 0.15, "paired_t": 5.0}}     # T+20 paired_t 5 < 10
     assert passes(report) is False
-
 
 def test_passes_treats_missing_as_false():
     report = {"5": {"diff": None, "paired_t": None}, "20": {"diff": None, "paired_t": None}}

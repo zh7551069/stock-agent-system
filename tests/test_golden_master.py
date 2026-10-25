@@ -12,23 +12,18 @@ from __future__ import annotations
 import datetime as dt
 import json
 import pathlib
-import sys
 
 import duckdb
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-from judge.outcome import DB_PATH, Decision, Library, judge  # noqa: E402
+from judge.outcome import DB_PATH, Decision, Library, judge
 
 DB = DB_PATH
 GOLDEN = pathlib.Path(__file__).parent / "golden" / "golden_samples.json"
 requires_db = pytest.mark.skipif(not DB.exists(), reason="主库未挂载（外接盘）")
 
-
 def _golden():
     return json.loads(GOLDEN.read_text(encoding="utf-8"))
-
 
 @requires_db
 def test_golden_master_judge_outputs_stable():
@@ -54,7 +49,6 @@ def test_golden_master_judge_outputs_stable():
                         f"{s['id']} T+{k} 超额漂移：{ov} vs {gv}"
                 else:
                     assert ov is None, f"{s['id']} T+{k} 超额应为空（不可成交）"
-
 
 @requires_db
 def test_golden_master_pct_chg_not_drifted():

@@ -5,12 +5,6 @@
 """
 from __future__ import annotations
 
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-
 def test_statistical_helpers_are_shared_with_stats():
     import judge.baseline as bl
     import judge.stats as st
