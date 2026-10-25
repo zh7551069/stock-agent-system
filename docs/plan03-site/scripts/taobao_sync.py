@@ -174,7 +174,7 @@ SOURCE_MAP = [
         "中单净流入占比(%)":("中单净流入占比(%)","num",""),
         "小单净流入净额(元)":("小单净流入净额(元)","num","元"),
         "小单净流入占比(%)":("小单净流入占比(%)","num",""),
-        "主力净流入最大股":"主力净流入最大股","序号":"序号"}),
+        "主力净流入最大股":"主力净流入最大股","序号":("序号","num","")}),
     # 涨停池 → zt_pool_limit_up（判决器读「代码+交易时间」；映射能对齐的字段，其余留空）
     (frozenset({"涨停原因","榜单类别","封单额(元)"}), "zt_pool_limit_up", {
         "交易日期":("交易时间","date"),"股票代码":("代码","code"),"股票名称":"名称",
@@ -529,11 +529,15 @@ def _adapt_date_types(con, tbl, rows, cols):
         return rows
     for col in cols:
         typ = col_types.get(col)
-        if typ not in ("DATE", "BIGINT", "VARCHAR"):
+        if typ not in ("DATE", "BIGINT", "VARCHAR", "DOUBLE", "HUGEINT"):
             continue
         for row in rows:
             v = row.get(col)
             if v is None:
+                continue
+            # 非 VARCHAR 列：空字符串/占位符 → None（避免 '' 转 DOUBLE/BIGINT 报错）
+            if typ != "VARCHAR" and isinstance(v, str) and v.strip() in ("", "--", "None", "nan"):
+                row[col] = None
                 continue
             if typ == "DATE":
                 if isinstance(v, str):
